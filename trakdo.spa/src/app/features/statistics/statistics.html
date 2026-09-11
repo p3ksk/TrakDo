@@ -1,0 +1,116 @@
+<div class="statistics-container">
+  <div class="calendar-header app-board-page-header">
+    <div class="header-left app-board-header-left">
+      <div class="board-info app-board-info">
+        <div class="board-color-indicator app-board-color-indicator" [style.background]="boardColor()"></div>
+        <div>
+          <h1 class="app-board-title">{{ boardName() }} - Statistics</h1>
+          <p class="board-description app-board-description">{{ boardDescription() }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-right app-board-header-right">
+      <div class="view-toggle app-view-toggle">
+        <button class="toggle-btn app-toggle-btn" [class.active]="viewMode === 'week'" (click)="switchView('week')">
+          Week
+        </button>
+        <button class="toggle-btn app-toggle-btn" [class.active]="viewMode === 'month'" (click)="switchView('month')">
+          Month
+        </button>
+      </div>
+
+      <div class="calendar-nav app-calendar-nav">
+        <button class="nav-btn app-nav-btn" (click)="previousPeriod()">←</button>
+        <button class="nav-btn app-nav-btn today" (click)="goToToday()">Today</button>
+        <button class="nav-btn app-nav-btn" (click)="nextPeriod()">→</button>
+      </div>
+
+      <div class="current-period app-current-period">
+        {{ getCurrentPeriodLabel() }}
+      </div>
+    </div>
+  </div>
+
+  <div class="state-card" *ngIf="isLoading()">
+    Loading statistics...
+  </div>
+
+  <div class="state-card error" *ngIf="!isLoading() && hasError()">
+    Failed to load statistics for this board and range.
+  </div>
+
+  <ng-container *ngIf="!isLoading() && !hasError()">
+    <div class="state-card" *ngIf="sessions().length === 0">
+      No tracked sessions in this range.
+    </div>
+
+    <ng-container *ngIf="sessions().length > 0">
+      <div class="overview-grid">
+        <div class="overview-card">
+          <div class="metric-label">Tracked Time</div>
+          <div class="metric-value">{{ formatHours(overview().totalDuration) }}</div>
+          <div class="metric-sub">{{ formatDuration(overview().totalDuration) }}</div>
+        </div>
+
+        <div class="overview-card">
+          <div class="metric-label">Sessions</div>
+          <div class="metric-value">{{ overview().sessionsCount }}</div>
+          <div class="metric-sub">In selected range</div>
+        </div>
+
+        <div class="overview-card">
+          <div class="metric-label">Avg Session</div>
+          <div class="metric-value">{{ formatDuration(overview().averageDuration) }}</div>
+          <div class="metric-sub">Per session</div>
+        </div>
+
+        <div class="overview-card">
+          <div class="metric-label">Active Days</div>
+          <div class="metric-value">{{ overview().activeDays }}</div>
+          <div class="metric-sub">Days with tracked time</div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <section class="stats-panel">
+          <h3>Daily Time Trend</h3>
+          <p class="panel-subtitle">Tracked duration by day</p>
+
+          <div class="trend-scroll">
+            <div class="trend-bars">
+              <div class="trend-point" *ngFor="let point of dailyTrend()" [title]="formatTrendTooltip(point)">
+                <div class="trend-track">
+                  <div class="trend-fill" [style.height.%]="point.heightPercent"></div>
+                </div>
+                <div class="trend-label">{{ point.label }}</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="stats-panel">
+          <h3>Top Tasks by Time</h3>
+          <p class="panel-subtitle">Highest total tracked duration</p>
+
+          <div class="top-task-list" *ngIf="topTasks().length > 0; else noTopTasks">
+            <div class="top-task-row" *ngFor="let task of topTasks()">
+              <div class="task-row-head">
+                <span class="task-name">{{ task.taskTitle }}</span>
+                <span class="task-sessions">{{ task.sessionsCount }} sessions</span>
+              </div>
+              <div class="task-row-bar">
+                <div class="task-row-fill" [style.width.%]="task.barPercent"></div>
+              </div>
+              <div class="task-row-meta">{{ formatDuration(task.totalDuration) }}</div>
+            </div>
+          </div>
+
+          <ng-template #noTopTasks>
+            <div class="panel-empty">No task data available.</div>
+          </ng-template>
+        </section>
+      </div>
+    </ng-container>
+  </ng-container>
+</div>

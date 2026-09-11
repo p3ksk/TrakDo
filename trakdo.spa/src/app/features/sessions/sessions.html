@@ -1,0 +1,138 @@
+<div class="sessions-container">
+  <div class="calendar-header app-board-page-header">
+    <div class="header-left app-board-header-left">
+      <div class="board-info app-board-info">
+        <div class="board-color-indicator app-board-color-indicator" [style.background]="boardColor()"></div>
+        <div>
+          <h1 class="app-board-title">{{ boardName() }} - Sessions</h1>
+          <p class="board-description app-board-description">{{ boardDescription() }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-right app-board-header-right">
+      <div class="view-toggle app-view-toggle">
+        <button class="toggle-btn app-toggle-btn" [class.active]="viewMode === 'week'" (click)="switchView('week')">
+          Week
+        </button>
+        <button class="toggle-btn app-toggle-btn" [class.active]="viewMode === 'month'" (click)="switchView('month')">
+          Month
+        </button>
+      </div>
+
+      <div class="calendar-nav app-calendar-nav">
+        <button class="nav-btn app-nav-btn" (click)="previousPeriod()">←</button>
+        <button class="nav-btn app-nav-btn today" (click)="goToToday()">Today</button>
+        <button class="nav-btn app-nav-btn" (click)="nextPeriod()">→</button>
+      </div>
+
+      <div class="current-period app-current-period">
+        {{ getCurrentPeriodLabel() }}
+      </div>
+
+      <div class="group-toggle">
+        <button class="group-toggle-btn" (click)="expandAllTaskGroups()" [disabled]="!hasAnyCollapsedGroups()">
+          Expand all
+        </button>
+        <button class="group-toggle-btn" (click)="collapseAllTaskGroups()" [disabled]="!hasAnyExpandedGroups()">
+          Collapse all
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sessions-tree" *ngIf="sessionGroups().length > 0; else noSessions">
+    <div class="task-group" *ngFor="let group of sessionGroups()">
+      <button class="task-header" (click)="toggleTaskGroup(group.taskId)">
+        <div class="task-title-wrap">
+          <span class="expand-indicator">{{ group.isExpanded ? '▾' : '▸' }}</span>
+          <span class="task-title">{{ group.taskTitle }}</span>
+        </div>
+        <div class="task-badges">
+          <span class="badge">{{ group.sessionsCount }} sessions</span>
+          <span class="badge duration">{{ formatDuration(group.totalDuration) }}</span>
+        </div>
+      </button>
+
+      <div class="task-sessions" *ngIf="group.isExpanded">
+        <div class="session-item" *ngFor="let session of group.sessions" [style.border-left]="'4px solid ' + session.color">
+          <div class="session-main">
+            <span class="session-color-dot" [style.background]="session.color"></span>
+            <div class="session-time">
+              <strong>{{ formatDate(session.startTime) }}</strong>
+              <span>{{ formatTime(session.startTime) }} - {{ session.endTime ? formatTime(session.endTime) : 'Running' }}</span>
+            </div>
+            <div class="session-note-column" *ngIf="session.notes" [title]="session.notes">{{ session.notes }}</div>
+            <div class="session-meta">
+              <span class="session-badge">{{ formatDuration(getSessionDuration(session)) }}</span>
+              <span class="session-status running" *ngIf="isRunning(session)">Live</span>
+            </div>
+          </div>
+          <div class="session-actions">
+            <button class="btn-secondary" (click)="openSessionModal(session); $event.stopPropagation()">Edit</button>
+            <button class="btn-danger" (click)="deleteSession(session.id); $event.stopPropagation()">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ng-template #noSessions>
+    <div class="empty-state">
+      <h3>No sessions in this range</h3>
+      <p>Try switching week/month view or navigating to another period.</p>
+    </div>
+  </ng-template>
+</div>
+
+<div class="modal-overlay app-modal-overlay" *ngIf="showSessionModal" (click)="closeSessionModal()">
+  <div class="modal-content app-modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header app-modal-header">
+      <h2>Edit Session</h2>
+      <button class="close-btn app-close-btn" (click)="closeSessionModal()">✕</button>
+    </div>
+
+    <form (ngSubmit)="saveSession()" class="modal-form app-modal-form">
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Date</label>
+        <input type="date" class="form-control app-form-control" [(ngModel)]="editSession.date" name="date" required />
+      </div>
+
+      <div class="form-row app-form-row">
+        <div class="form-group app-form-group">
+          <label class="form-label app-form-label">Start Time</label>
+          <input type="time" class="form-control app-form-control" [(ngModel)]="editSession.startTime" name="startTime" required />
+        </div>
+
+        <div class="form-group app-form-group">
+          <label class="form-label app-form-label">End Time</label>
+          <input type="time" class="form-control app-form-control" [(ngModel)]="editSession.endTime" name="endTime" />
+        </div>
+      </div>
+
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Note</label>
+        <textarea
+          class="form-control app-form-control"
+          [(ngModel)]="editSession.note"
+          name="note"
+          rows="3"
+          placeholder="Add session notes"
+        ></textarea>
+      </div>
+
+      <div class="modal-actions app-modal-actions">
+        <button
+          type="button"
+          class="app-modal-btn app-modal-btn-danger"
+          *ngIf="selectedSession"
+          (click)="deleteSession(selectedSession.id)"
+        >
+          Delete
+        </button>
+        <button type="button" class="app-modal-btn app-modal-btn-secondary" (click)="closeSessionModal()">Cancel</button>
+        <button type="submit" class="app-modal-btn app-modal-btn-primary" [disabled]="!editSession.date || !editSession.startTime">Save</button>
+      </div>
+    </form>
+  </div>
+</div>

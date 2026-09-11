@@ -1,0 +1,50 @@
+services:
+  trakdo-db:
+    container_name: trakdo-db
+    image: docker.io/library/mariadb:10
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpassword}
+      MARIADB_DATABASE: TrakDo
+      MARIADB_USER: trakdoUser
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-trakdo1234}
+    volumes:
+      - trakdo_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h localhost -uroot -p$$MARIADB_ROOT_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  trakdo-api:
+    image: localhost/trakdo_api:latest
+    container_name: trakdo-api
+    build:
+      context: .
+      dockerfile: TrakDo.API/Dockerfile
+    ports:
+      - 8081:8080
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__MySqlServer: "server=trakdo-db;port=3306;database=TrakDo;user=trakdoUser;password=${MARIADB_PASSWORD:-trakdo1234};"
+      SecretKey: ${SecretKey}
+      TokenDurationMinutes: ${TokenDurationMinutes:-4320}
+    depends_on:
+      trakdo-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  trakdo-web:
+    image: localhost/trakdo_spa:latest
+    container_name: trakdo-web
+    build:
+      context: .
+      dockerfile: trakdo.spa/Dockerfile
+    ports:
+      - 4200:80
+    depends_on:
+      - trakdo-api
+    restart: unless-stopped
+
+volumes:
+  trakdo_db_data:

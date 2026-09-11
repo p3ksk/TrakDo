@@ -1,0 +1,28 @@
+.settings-container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1rem;
+  color: #fff;
+}
+
+.settings-header h1 {
+  margin: 0 0 0.5rem;
+}
+
+.settings-header p {
+  margin: 0 0 1.5rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.settings-form {
+  background: rgba(14, 29, 44, 0.75);
+  border: 1px solid rgba(9, 193, 191, 0.2);
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}

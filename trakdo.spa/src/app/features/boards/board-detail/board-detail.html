@@ -1,0 +1,474 @@
+<div class="board-detail-container" *ngIf="board; else noBoardState">
+  <!-- Board Header -->
+  <div class="board-header app-board-page-header">
+    <div class="header-left app-board-header-left">
+      <div class="board-info app-board-info">
+        <div class="board-color-indicator app-board-color-indicator" [style.background]="board.color"></div>
+        <div>
+          <h1 class="board-title app-board-title">{{ board.name }} - Tasks</h1>
+          <p class="board-description app-board-description">{{ board.description }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="header-right app-board-header-right">
+      <div class="board-stats">
+        <span class="stat">{{ columns.length }} columns</span>
+        <span class="stat-divider">•</span>
+        <span class="stat">{{ getTotalTasks() }} tasks</span>
+      </div>
+      <button class="btn-add-column" (click)="openAddColumnModal()">
+        <span>➕</span>
+        <span>Add Column</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Kanban Board -->
+  <div class="kanban-board">
+    <div class="columns-container">
+      <!-- Column -->
+      <div
+        class="column"
+        *ngFor="let column of columns"
+        (dragover)="onDragOver($event)"
+        (drop)="onDrop($event, column)"
+      >
+        <div class="column-header" [style.border-color]="column.color">
+          <div class="column-title-section">
+            <div class="column-color-dot" [style.background]="column.color"></div>
+            <h3 class="column-title">{{ column.name }}</h3>
+            <span class="task-count">{{ column.tasks?.length ?? 0 }}</span>
+          </div>
+          <div class="column-actions">
+            <button class="column-action-btn" (click)="openAddTaskModal(column)" title="Add task">
+              ➕
+            </button>
+            <button class="column-action-btn delete" (click)="deleteColumn(column.id)" title="Delete column">
+              🗑️
+            </button>
+          </div>
+        </div>
+
+        <div class="tasks-container">
+          <!-- Task Card -->
+          <div
+            class="task-card"
+            *ngFor="let task of column.tasks"
+            draggable="true"
+            (dragstart)="onDragStart($event, task, column)"
+            (dragend)="onDragEnd()"
+            (click)="openTaskDetail(task)"
+          >
+            <div class="task-header">
+              <div class="task-title-wrap">
+                <span class="task-color-dot" [style.background]="task.color || '#09C1BF'"></span>
+                <h4 class="task-title">{{ task.title }}</h4>
+              </div>
+              @if (task.priority) {
+              <div class="priority-badge" [style.background]="getPriorityColor(task.priority)">
+                {{ task.priority }}
+              </div>
+              }
+            </div>
+
+            <p class="task-description" *ngIf="task.description">
+              {{ task.description }}
+            </p>
+
+            <!-- Timer Section -->
+            <div class="task-timer-section">
+              <div class="timer-display">
+                <span class="timer-icon">⏱️</span>
+                <span class="timer-value">{{ task.isTimerRunning ? formatDuration(getCurrentElapsedTime(task)) : formatDuration(getTotalTimeSpent(task)) }}</span>
+                <span class="timer-label" *ngIf="!task.isTimerRunning && task.sessions.length > 0">
+                  ({{ task.sessions.length }} sessions)
+                </span>
+                <span class="timer-label running" *ngIf="task.isTimerRunning">
+                  Current Session
+                </span>
+              </div>
+
+              <div class="timer-controls">
+                <button
+                  *ngIf="!task.isTimerRunning"
+                  class="timer-btn start"
+                  (click)="startTimer(task, $event)"
+                  title="Start timer">▶</button>
+                <button
+                  *ngIf="task.isTimerRunning"
+                  class="timer-btn stop"
+                  (click)="stopTimer(task, $event)"
+                  title="Stop timer">⏸</button>
+              </div>
+            </div>
+
+            <div class="task-footer" *ngIf="task.tags">
+              <div class="task-tags" *ngIf="task.tags.length > 0">
+                <span class="tag" *ngFor="let tag of task.tags">{{ tag }}</span>
+              </div>
+
+              <div class="task-meta">
+                @if (task.assignee) {
+                <span class="assignee" *ngIf="task.assignee">
+                  <span class="assignee-avatar">{{ task.assignee.charAt(0) }}</span>
+                  <span class="assignee-name">{{ task.assignee }}</span>
+                </span>
+                }
+                @if (task.dueDate) {
+                <span class="due-date">
+                  📅 {{ formatDate(task.dueDate) }}
+                </span>
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty Column State -->
+          @if (column.tasks.length === 0) {
+            <div class="empty-column">
+              <p>No tasks yet</p>
+              <button class="btn-add-task-empty" (click)="openAddTaskModal(column)">
+                Add Task
+              </button>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Add Column Placeholder -->
+      <div class="add-column-placeholder" (click)="openAddColumnModal()">
+        <span class="add-icon">➕</span>
+        <span>Add Column</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<ng-template #noBoardState>
+  <div class="board-empty-state">
+    <h2>No boards yet</h2>
+    <p>Create your first board to start managing tasks in Kanban view.</p>
+    <button class="btn-add-column" (click)="openCreateBoardModal()">
+      <span>➕</span>
+      <span>Create Board</span>
+    </button>
+  </div>
+</ng-template>
+
+<!-- Add Column Modal -->
+<div class="modal-overlay app-modal-overlay" *ngIf="showAddColumnModal" (click)="closeAddColumnModal()">
+  <div class="modal-content app-modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header app-modal-header">
+      <h2>Add New Column</h2>
+      <button class="close-btn app-close-btn" (click)="closeAddColumnModal()">✕</button>
+    </div>
+
+    <form (ngSubmit)="addColumn()" class="modal-form app-modal-form">
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Column Name</label>
+        <input
+          type="text"
+          class="form-control app-form-control"
+          placeholder="e.g., In Progress"
+          [(ngModel)]="newColumn.name"
+          name="name"
+          required
+        />
+      </div>
+
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Column Color</label>
+        <div class="color-picker">
+          <div
+            *ngFor="let color of colorOptions"
+            class="color-option"
+            [class.selected]="newColumn.color === color.value"
+            [style.background]="color.value"
+            (click)="newColumn.color = color.value"
+            [title]="color.label"
+          ></div>
+        </div>
+      </div>
+
+      <div class="modal-actions app-modal-actions">
+        <button type="button" class="app-modal-btn app-modal-btn-secondary" (click)="closeAddColumnModal()">
+          Cancel
+        </button>
+        <button type="submit" class="app-modal-btn app-modal-btn-primary" [disabled]="!newColumn.name.trim()">
+          Add Column
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add Task Modal -->
+<div class="modal-overlay app-modal-overlay" *ngIf="showAddTaskModal" (click)="closeAddTaskModal()">
+  <div class="modal-content app-modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header app-modal-header">
+      <h2>Add New Task</h2>
+      <button class="close-btn app-close-btn" (click)="closeAddTaskModal()">✕</button>
+    </div>
+
+    <form (ngSubmit)="addTask()" class="modal-form app-modal-form">
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Task Title</label>
+        <input
+          type="text"
+          class="form-control app-form-control"
+          placeholder="What needs to be done?"
+          [(ngModel)]="newTask.title"
+          name="title"
+          required
+        />
+      </div>
+
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Description</label>
+        <textarea
+          class="form-control app-form-control"
+          placeholder="Add more details..."
+          [(ngModel)]="newTask.description"
+          name="description"
+          rows="3"
+        ></textarea>
+      </div>
+
+      <div class="form-row app-form-row">
+        <div class="form-group app-form-group">
+          <label class="form-label app-form-label">Priority</label>
+          <select class="form-control app-form-control" [(ngModel)]="newTask.priority" name="priority">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+
+        <div class="form-group app-form-group">
+          <label class="form-label app-form-label">Due Date</label>
+          <input
+            type="date"
+            class="form-control app-form-control"
+            [(ngModel)]="newTask.dueDate"
+            name="dueDate"
+          />
+        </div>
+      </div>
+
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Task Color</label>
+        <div class="color-picker">
+          <div
+            *ngFor="let color of colorOptions"
+            class="color-option"
+            [class.selected]="newTask.color === color.value"
+            [style.background]="color.value"
+            (click)="newTask.color = color.value"
+            [title]="color.label"
+          ></div>
+        </div>
+      </div>
+
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Assignee</label>
+        <input
+          type="text"
+          class="form-control app-form-control"
+          placeholder="Who is responsible?"
+          [(ngModel)]="newTask.assignee"
+          name="assignee"
+        />
+      </div>
+
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Tags (comma separated)</label>
+        <input
+          type="text"
+          class="form-control app-form-control"
+          placeholder="e.g., design, urgent, frontend"
+          [(ngModel)]="newTask.tags"
+          name="tags"
+        />
+      </div>
+
+      <div class="modal-actions app-modal-actions">
+        <button type="button" class="app-modal-btn app-modal-btn-secondary" (click)="closeAddTaskModal()">
+          Cancel
+        </button>
+        <button type="submit" class="app-modal-btn app-modal-btn-primary" [disabled]="!newTask.title.trim()">
+          Add Task
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Task Detail Modal -->
+<div class="modal-overlay app-modal-overlay" *ngIf="showTaskDetailModal && selectedTask" (click)="closeTaskDetail()">
+  <div class="modal-content app-modal-content large" (click)="$event.stopPropagation()">
+    <div class="modal-header app-modal-header">
+      <h2>{{ selectedTask.title }}</h2>
+      <button class="close-btn app-close-btn" (click)="closeTaskDetail()">✕</button>
+    </div>
+
+    <div class="task-detail-content">
+      <div class="detail-section">
+        <h3>Description</h3>
+        <p>{{ selectedTask.description || 'No description provided' }}</p>
+      </div>
+
+      <!-- Timer Section in Detail -->
+      <div class="detail-section">
+        <h3>Time Tracking</h3>
+        <div class="detail-timer-section">
+          <div class="total-time-display">
+            <span class="total-icon">⏱️</span>
+            <span class="total-value" [class.running]="selectedTask.isTimerRunning">
+              {{ selectedTask.isTimerRunning ? formatDuration(getCurrentElapsedTime(selectedTask)) : formatDuration(getTotalTimeSpent(selectedTask)) }}
+            </span>
+            <span class="total-label" *ngIf="!selectedTask.isTimerRunning">Total Time</span>
+            <span class="total-label running" *ngIf="selectedTask.isTimerRunning">Current Session</span>
+          </div>
+
+          <div class="cumulative-time" *ngIf="selectedTask.isTimerRunning">
+            <span class="cumulative-label">Total Time (all sessions):</span>
+            <span class="cumulative-value">{{ formatDuration(getTotalTimeSpent(selectedTask) - getCurrentElapsedTime(selectedTask)) }}</span>
+          </div>
+
+          <div class="detail-timer-controls">
+            <button
+              *ngIf="!selectedTask.isTimerRunning"
+              class="detail-timer-btn start"
+              (click)="startTimer(selectedTask, $event)"
+            >
+              ▶ Start Timer
+            </button>
+            <button
+              *ngIf="selectedTask.isTimerRunning"
+              class="detail-timer-btn stop"
+              (click)="stopTimer(selectedTask, $event)"
+            >
+              ⏸ Stop Timer
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sessions List -->
+      <div class="detail-section" *ngIf="selectedTask.sessions.length > 0">
+        <h3>Sessions ({{ selectedTask.sessions.length }})</h3>
+        <div class="sessions-list">
+          <div class="session-item" *ngFor="let session of selectedTask.sessions">
+            <div class="session-info">
+              <div class="session-core">
+                <span class="session-duration">{{ formatDuration(session.duration) }}</span>
+                <span class="session-time">{{ formatSessionTime(session) }}</span>
+              </div>
+              <span class="session-note-column" *ngIf="session.notes" [title]="session.notes">{{ session.notes }}</span>
+            </div>
+            <button class="session-delete-btn" (click)="deleteSession(selectedTask, session.id, $event)">
+              🗑️
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-row">
+        @if (selectedTask.priority) {
+        <div class="detail-section">
+          <h3>Priority</h3>
+          <div
+            class="priority-badge large"
+            [style.background]="getPriorityColor(selectedTask.priority)">
+            {{ selectedTask.priority }}
+          </div>
+        </div>
+        }
+
+        <div class="detail-section" *ngIf="selectedTask.dueDate">
+          <h3>Due Date</h3>
+          <p>📅 {{ formatDate(selectedTask.dueDate) }}</p>
+        </div>
+      </div>
+
+      <div class="detail-section" *ngIf="selectedTask.assignee">
+        <h3>Assignee</h3>
+        <div class="assignee-detail">
+          <span class="assignee-avatar large">{{ selectedTask.assignee.charAt(0) }}</span>
+          <span>{{ selectedTask.assignee }}</span>
+        </div>
+      </div>
+
+      <div class="detail-section" *ngIf="selectedTask.tags?.length ?? 0 > 0">
+        <h3>Tags</h3>
+        <div class="task-tags">
+          <span class="tag" *ngFor="let tag of selectedTask.tags">{{ tag }}</span>
+        </div>
+      </div>
+
+      <div class="task-detail-actions">
+        <button class="btn-delete" (click)="deleteTask(selectedColumn!, selectedTask.id)">
+          🗑️ Delete Task
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create Board Modal -->
+<div class="modal-overlay app-modal-overlay" *ngIf="showCreateBoardModal" (click)="closeCreateBoardModal()">
+  <div class="modal-content app-modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header app-modal-header">
+      <h2>Create Board</h2>
+      <button class="close-btn app-close-btn" (click)="closeCreateBoardModal()">✕</button>
+    </div>
+
+    <form (ngSubmit)="createBoard()" class="modal-form app-modal-form">
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Board Name</label>
+        <input
+          type="text"
+          class="form-control app-form-control"
+          placeholder="e.g., Product Team"
+          [(ngModel)]="newBoard.name"
+          name="boardName"
+          required
+        />
+      </div>
+
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Description</label>
+        <textarea
+          class="form-control app-form-control"
+          placeholder="What is this board about?"
+          [(ngModel)]="newBoard.description"
+          name="boardDescription"
+          rows="3"
+        ></textarea>
+      </div>
+
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Board Color</label>
+        <div class="color-picker">
+          <div
+            *ngFor="let color of colorOptions"
+            class="color-option"
+            [class.selected]="newBoard.color === color.value"
+            [style.background]="color.value"
+            (click)="newBoard.color = color.value"
+            [title]="color.label"
+          ></div>
+        </div>
+      </div>
+
+      <div class="modal-actions app-modal-actions">
+        <button type="button" class="app-modal-btn app-modal-btn-secondary" (click)="closeCreateBoardModal()">
+          Cancel
+        </button>
+        <button type="submit" class="app-modal-btn app-modal-btn-primary" [disabled]="!newBoard.name.trim()">
+          Create Board
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

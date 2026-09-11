@@ -1,0 +1,334 @@
+.calendar-container {
+  animation: appFadeInUp 0.5s ease-out;
+  height: calc(100vh - 180px);
+  display: flex;
+  flex-direction: column;
+}
+
+.btn-add-session {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #0E1D2C;
+  background: linear-gradient(135deg, #09C1BF, #FCCE5F);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-add-session:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(9, 193, 191, 0.4);
+}
+
+/* ========================================
+   Week View
+   ======================================== */
+.week-view {
+  flex: 1;
+  overflow: auto;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 16px;
+  padding: 1rem;
+}
+
+.week-grid {
+  display: grid;
+  grid-template-columns: 80px repeat(7, 1fr);
+  min-width: 900px;
+  gap: 1px;
+  background: rgba(9, 193, 191, 0.1);
+}
+
+/* Time Column */
+.time-column {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.time-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #09C1BF;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  background: rgba(14, 29, 44, 0.95);
+  border-radius: 8px 0 0 0;
+}
+
+.time-slots {
+  display: flex;
+  flex-direction: column;
+}
+
+.time-slot {
+  height: 80px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 0.5rem;
+  background: rgba(14, 29, 44, 0.95);
+}
+
+.time-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Day Columns */
+.day-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.day-header {
+  height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  background: rgba(14, 29, 44, 0.95);
+  border-radius: 0 0 0 0;
+  transition: all 0.2s ease;
+}
+
+.day-header.today {
+  background: rgba(9, 193, 191, 0.2);
+  border: 2px solid rgba(9, 193, 191, 0.5);
+}
+
+.day-name {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.day-date {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #09C1BF;
+}
+
+.day-header.today .day-date {
+  color: #FCCE5F;
+}
+
+.day-slots {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: visible;
+}
+
+.hour-slot {
+  height: 80px;
+  background: rgba(14, 29, 44, 0.95);
+  border-top: 1px solid rgba(9, 193, 191, 0.05);
+  position: relative;
+  overflow: visible;
+  transition: background 0.2s ease;
+}
+
+.hour-slot:hover {
+  background: rgba(9, 193, 191, 0.02);
+}
+
+/* Session Blocks */
+.session-block {
+  position: absolute;
+  border-radius: 6px;
+  padding: 0.5rem;
+  cursor: pointer;
+  overflow: hidden;
+  z-index: 50;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.session-block:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  z-index: 60;
+}
+
+.session-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #0E1D2C;
+  margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-time {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.7rem;
+  color: rgba(14, 29, 44, 0.8);
+}
+
+/* ========================================
+   Month View
+   ======================================== */
+.month-view {
+  flex: 1;
+  overflow: auto;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: rgba(9, 193, 191, 0.1);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.weekday-header {
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #09C1BF;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  background: rgba(14, 29, 44, 0.95);
+}
+
+.month-day {
+  min-height: 120px;
+  background: rgba(14, 29, 44, 0.95);
+  padding: 0.75rem;
+  position: relative;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.month-day:hover {
+  background: rgba(9, 193, 191, 0.05);
+}
+
+.month-day.other-month {
+  opacity: 0.4;
+}
+
+.month-day.today {
+  background: rgba(9, 193, 191, 0.15);
+  border: 2px solid rgba(9, 193, 191, 0.5);
+}
+
+.day-number {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 0.5rem;
+}
+
+.month-day.today .day-number {
+  color: #FCCE5F;
+  font-weight: 700;
+}
+
+.day-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.month-session {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #0E1D2C;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.month-session:hover {
+  transform: translateX(2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.session-dot {
+  width: 6px;
+  height: 6px;
+  background: rgba(14, 29, 44, 0.5);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.session-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-summary {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.75rem;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #09C1BF;
+}
+
+/* ========================================
+   Responsive
+   ======================================== */
+@media (max-width: 1024px) {
+  .week-grid {
+    grid-template-columns: 70px repeat(7, 1fr);
+  }
+
+  .time-header,
+  .time-slot {
+    font-size: 0.7rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .week-view {
+    overflow-x: auto;
+  }
+
+  .month-day {
+    min-height: 100px;
+    padding: 0.5rem;
+  }
+
+}

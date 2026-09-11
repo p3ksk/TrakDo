@@ -1,0 +1,156 @@
+<div class="boards-container">
+  <!-- Header Section -->
+  <div class="boards-header">
+    <div class="header-content app-board-page-header">
+      <div class="title-section app-board-header-left">
+        <h1 class="app-board-title">My Boards</h1>
+        <p class="subtitle app-board-description">Manage and organize your project boards</p>
+      </div>
+      <div class="app-board-header-right">
+        <button class="btn-create" (click)="openCreateModal()">
+          <span class="btn-icon">➕</span>
+          <span>Create Board</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="search-container">
+      <span class="search-icon">🔍</span>
+      <input
+        type="text"
+        class="search-input"
+        placeholder="Search boards..."
+        [(ngModel)]="searchQuery"
+        (input)="searchBoards()"
+      />
+    </div>
+  </div>
+
+  <!-- Stats Summary -->
+  <div class="stats-summary">
+    <div class="stat-item">
+      <span class="stat-value">{{ boards().length }}</span>
+      <span class="stat-label">Total Boards</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">Total Tasks</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value">{{ filteredBoards().length }}</span>
+      <span class="stat-label">Showing</span>
+    </div>
+  </div>
+
+  <!-- Boards Grid -->
+  <div class="boards-grid" *ngIf="filteredBoards().length > 0">
+    <div class="board-card" *ngFor="let board of filteredBoards()">
+      <div class="board-color-bar" [style.background]="board.color"></div>
+
+      <div class="board-content">
+        <div class="board-header">
+          <h3 class="board-title">{{ board.name }}</h3>
+          <div class="board-actions">
+            <button class="action-btn" title="Edit">✏️</button>
+            <button class="action-btn delete" (click)="deleteBoard(board.id)" title="Delete">🗑️</button>
+          </div>
+        </div>
+
+        <p class="board-description">{{ board.description }}</p>
+
+        <div class="board-stats">
+          <div class="stat-badge">
+            <span class="badge-icon">📝</span>
+            <span>{{ board.tasksCount }} tasks</span>
+          </div>
+          <div class="stat-badge">
+            <span class="badge-icon">👥</span>
+            <span>N/A members</span>
+          </div>
+        </div>
+
+        <div class="board-footer">
+          <span class="board-date" *ngIf="board.updatedAt">Updated {{ getRelativeTime(board.updatedAt) }}</span>
+          <a [routerLink]="['/board', board.id, 'tasks']" class="view-btn">
+            Open Board →
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Empty State -->
+  <div class="empty-state" *ngIf="filteredBoards().length === 0 && boards().length > 0">
+    <div class="empty-icon">🔍</div>
+    <h3>No boards found</h3>
+    <p>Try adjusting your search query</p>
+  </div>
+
+  <div class="empty-state" *ngIf="boards().length === 0">
+    <div class="empty-icon">📋</div>
+    <h3>No boards yet</h3>
+    <p>Create your first board to get started</p>
+    <button class="btn-create" (click)="openCreateModal()">
+      <span class="btn-icon">➕</span>
+      <span>Create Your First Board</span>
+    </button>
+  </div>
+</div>
+
+<!-- Create Board Modal -->
+<div class="modal-overlay app-modal-overlay" *ngIf="showCreateModal" (click)="closeCreateModal()">
+  <div class="modal-content app-modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header app-modal-header">
+      <h2>Create New Board</h2>
+      <button class="close-btn app-close-btn" (click)="closeCreateModal()">✕</button>
+    </div>
+
+    <form (ngSubmit)="createBoard()" class="modal-form app-modal-form">
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Board Name</label>
+        <input
+          type="text"
+          class="form-control app-form-control"
+          placeholder="e.g., Website Redesign"
+          [(ngModel)]="newBoard.name"
+          name="name"
+          required
+        />
+      </div>
+
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Description</label>
+        <textarea
+          class="form-control app-form-control"
+          placeholder="What is this board about?"
+          [(ngModel)]="newBoard.description"
+          name="description"
+          rows="3"
+        ></textarea>
+      </div>
+
+      <div class="form-group app-form-group">
+        <label class="form-label app-form-label">Board Color</label>
+        <div class="color-picker">
+          <div
+            *ngFor="let color of colorOptions"
+            class="color-option"
+            [class.selected]="newBoard.color === color.value"
+            [style.background]="color.value"
+            (click)="newBoard.color = color.value"
+            [title]="color.label"
+          ></div>
+        </div>
+      </div>
+
+      <div class="modal-actions app-modal-actions">
+        <button type="button" class="app-modal-btn app-modal-btn-secondary" (click)="closeCreateModal()">
+          Cancel
+        </button>
+        <button type="submit" class="app-modal-btn app-modal-btn-primary" [disabled]="!newBoard.name.trim()">
+          Create Board
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

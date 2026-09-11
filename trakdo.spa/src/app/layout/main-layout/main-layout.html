@@ -1,0 +1,147 @@
+<div class="layout-container">
+  <!-- Notifications -->
+  <app-notifications></app-notifications>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" [class.collapsed]="isSidebarCollapsed" [class.mobile-open]="isMobileMenuOpen">
+    <div class="sidebar-header">
+      <div class="logo-container">
+        <img class="logo-img" src="/assets/icon-small.png" alt="logo"/>
+        <h1 class="logo-text" *ngIf="!isSidebarCollapsed">TrakDo</h1>
+      </div>
+      <button class="collapse-btn" (click)="toggleSidebar()" *ngIf="!isMobileMenuOpen">
+        <span *ngIf="!isSidebarCollapsed">◀</span>
+        <span *ngIf="isSidebarCollapsed">▶</span>
+      </button>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section workspace-section">
+        @if (!isSidebarCollapsed) {
+          <div class="nav-section-title">Board Workspace</div>
+        }
+        @if (!isSidebarCollapsed && boards().length > 0) {
+          <div class="board-selector">
+            <label class="board-selector-label">Board</label>
+            <select class="board-selector-control" [ngModel]="selectedBoardId()" (ngModelChange)="onBoardSelectionChange($event)">
+              @for (board of boards(); track board.id) {
+                <option [ngValue]="board.id">{{ board.name }}</option>
+              }
+            </select>
+          </div>
+        }
+
+        <a
+          [routerLink]="getTasksLink()"
+          class="nav-item"
+          [class.active]="isTasksRoute()"
+          (click)="closeMobileMenu()"
+        >
+          <span class="nav-icon">📋</span>
+          <span class="nav-text" *ngIf="!isSidebarCollapsed">Tasks</span>
+        </a>
+
+        <a
+          [routerLink]="getCalendarLink()"
+          class="nav-item"
+          [class.active]="isCalendarRoute()"
+          (click)="closeMobileMenu()"
+        >
+          <span class="nav-icon">📅</span>
+          <span class="nav-text" *ngIf="!isSidebarCollapsed">Calendar</span>
+        </a>
+
+        <a
+          [routerLink]="getSessionsLink()"
+          class="nav-item"
+          [class.active]="isSessionsRoute()"
+          (click)="closeMobileMenu()"
+        >
+          <span class="nav-icon">⏱️</span>
+          <span class="nav-text" *ngIf="!isSidebarCollapsed">Sessions</span>
+        </a>
+
+        <a
+          [routerLink]="getStatisticsLink()"
+          class="nav-item"
+          [class.active]="isStatisticsRoute()"
+          (click)="closeMobileMenu()"
+        >
+          <span class="nav-icon">📈</span>
+          <span class="nav-text" *ngIf="!isSidebarCollapsed">Statistics</span>
+        </a>
+      </div>
+
+      <div class="nav-section management-section">
+        @if (!isSidebarCollapsed) {
+          <div class="nav-section-title">Management</div>
+        }
+        <a
+          routerLink="/boards"
+          class="nav-item"
+          [class.active]="isBoardsRoute()"
+          (click)="closeMobileMenu()"
+        >
+          <span class="nav-icon">🗂️</span>
+          <span class="nav-text" *ngIf="!isSidebarCollapsed">Board Management</span>
+        </a>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-profile" *ngIf="authService.currentUser() as user">
+        <div class="user-avatar">
+          {{ user.username.charAt(0).toUpperCase() }}
+        </div>
+        <div class="user-info" *ngIf="!isSidebarCollapsed">
+          <p class="user-name">{{ user.username }}</p>
+        </div>
+      </div>
+      <button class="settings-btn" (click)="goToSettings()" [class.icon-only]="isSidebarCollapsed" title="Settings">
+        <span class="settings-icon">S</span>
+        <span class="settings-text" *ngIf="!isSidebarCollapsed">Settings</span>
+      </button>
+      <button class="logout-btn" (click)="logout()" [class.icon-only]="isSidebarCollapsed">
+        <span class="logout-text" *ngIf="!isSidebarCollapsed">Logout</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Mobile Overlay -->
+  <div class="mobile-overlay" *ngIf="isMobileMenuOpen" (click)="closeMobileMenu()"></div>
+
+  <!-- Main Content Area -->
+  <div class="main-content" [class.sidebar-collapsed]="isSidebarCollapsed">
+    <!-- Header -->
+    <!--    <header class="header">-->
+    <!--      <div class="header-left">-->
+    <!--        <button class="mobile-menu-btn" (click)="toggleMobileMenu()">-->
+    <!--          ☰-->
+    <!--        </button>-->
+    <!--        <h2 class="page-title">Welcome back!</h2>-->
+    <!--      </div>-->
+    <!--      <div class="header-right">-->
+    <!--        <div class="header-actions">-->
+    <!--          <button class="header-btn">-->
+    <!--            <span class="notification-icon">🔔</span>-->
+    <!--            <span class="notification-badge">3</span>-->
+    <!--          </button>-->
+    <!--          <button class="header-btn">⚙️</button>-->
+    <!--        </div>-->
+    <!--      </div>-->
+    <!--    </header>-->
+
+    <!-- Page Content -->
+    <main class="content">
+      @if (settingsService.isLoaded()) {
+        <router-outlet></router-outlet>
+      } @else {
+        <div class="empty-state">Loading settings...</div>
+      }
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>&copy; 2026 TrakDo. All rights reserved.</p>
+    </footer>
+  </div>
+</div>

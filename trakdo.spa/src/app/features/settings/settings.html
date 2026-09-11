@@ -1,0 +1,56 @@
+<div class="settings-container">
+  <div class="settings-header">
+    <h1>Settings</h1>
+    <p>Manage your timezone, date/time format, and work hours.</p>
+  </div>
+
+  <div class="settings-form" *ngIf="isLoading">Loading settings...</div>
+
+  <form class="settings-form" *ngIf="!isLoading">
+    <div class="form-group app-form-group">
+      <label class="app-form-label" for="timezone">Timezone</label>
+      <select class="app-form-control" id="timezone" name="timezone" [(ngModel)]="settingsForm.timezone">
+        <option *ngFor="let timezone of timezoneOptions" [value]="timezone">{{ timezone }}</option>
+      </select>
+    </div>
+
+    <div class="form-group app-form-group">
+      <label class="app-form-label" for="dateFormat">Date format</label>
+      <select class="app-form-control" id="dateFormat" name="dateFormat" [(ngModel)]="settingsForm.dateFormat">
+        <option *ngFor="let dateFormat of dateFormatOptions" [value]="dateFormat">{{ dateFormat }}</option>
+      </select>
+    </div>
+
+    <div class="form-group app-form-group">
+      <label class="app-form-label" for="use24HourTime">Time format</label>
+      <select class="app-form-control" id="use24HourTime" name="use24HourTime" [(ngModel)]="settingsForm.use24HourTime">
+        <option [ngValue]="true">24-hour</option>
+        <option [ngValue]="false">12-hour</option>
+      </select>
+    </div>
+
+    <div class="form-row app-form-row">
+      <div class="form-group app-form-group">
+        <label class="app-form-label" for="workDayStartHour">Work day start</label>
+        <select class="app-form-control" id="workDayStartHour" name="workDayStartHour" [(ngModel)]="settingsForm.workDayStartHour">
+          <option *ngFor="let hour of hourStartOptions" [ngValue]="hour">{{ hour.toString().padStart(2, '0') }}:00</option>
+        </select>
+      </div>
+
+      <div class="form-group app-form-group">
+        <label class="app-form-label" for="workDayEndHour">Work day end</label>
+        <select class="app-form-control" id="workDayEndHour" name="workDayEndHour" [(ngModel)]="settingsForm.workDayEndHour">
+          <option *ngFor="let hour of hourEndOptions" [ngValue]="hour">
+            {{ hour === 24 ? '24:00' : hour.toString().padStart(2, '0') + ':00' }}
+          </option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button class="app-modal-btn app-modal-btn-primary" type="button" (click)="saveSettings()" [disabled]="isSaving">
+        Save settings
+      </button>
+    </div>
+  </form>
+</div>
