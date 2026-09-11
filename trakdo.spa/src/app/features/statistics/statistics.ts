@@ -1,13 +1,17 @@
-import { Component, OnInit, effect, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, DestroyRef, OnInit, effect, inject, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { SessionsService } from '../../core/services/sessions.service';
 import { DateTimeFormatService } from '../../core/services/date-time-format.service';
 import { BoardSelectionService } from '../../core/services/board-selection.service';
 import { BoardService } from '../../core/services/board.service';
-import { CalendarRangeStateService, CalendarViewMode } from '../../core/services/calendar-range-state.service';
+import { CalendarRangeStateService } from '../../core/services/calendar-range-state.service';
 import { SettingsService } from '../../core/services/settings.service';
 import { SessionBusService } from '../../core/services/session-bus.service';
+import { formatHuman, pluralize } from '../../core/utils/duration';
+import { Icon } from '../../shared/icon/icon';
+import { PageHeader } from '../../shared/page-header/page-header';
+import { RangeToolbar } from '../../shared/range-toolbar/range-toolbar';
 
 interface SessionApiResponse {
   id: number | string;
@@ -53,12 +57,14 @@ interface TopTaskStatistic {
 @Component({
   selector: 'app-statistics',
   standalone: true,
-  imports: [CommonModule],
+  imports: [Icon, PageHeader, RangeToolbar],
   templateUrl: './statistics.html',
   styleUrl: './statistics.css'
 })
 export class Statistics implements OnInit {
-  boardName = signal<string>('Board');
+  readonly pluralize = pluralize;
+
+  boardName = signal<string>('');
   boardDescription = signal<string>('');
   boardColor = signal<string>('#09C1BF');
   sessions = signal<StatisticsSession[]>([]);
@@ -70,16 +76,11 @@ export class Statistics implements OnInit {
   });
   dailyTrend = signal<DailyTrendPoint[]>([]);
   topTasks = signal<TopTaskStatistic[]>([]);
-  isLoading = signal<boolean>(false);
+  isLoading = signal<boolean>(true);
   hasError = signal<boolean>(false);
 
-  private isInitialized = false;
   private routeBoardId = signal<number | null>(null);
   private loadStatisticsRequestId = 0;
-
-  get viewMode(): CalendarViewMode {
-    return this.calendarRangeState.viewMode();
-  }
 
   constructor(
     private sessionsService: SessionsService,
@@ -88,40 +89,37 @@ export class Statistics implements OnInit {
     private dateTimeFormat: DateTimeFormatService,
     private boardSelectionService: BoardSelectionService,
     private boardService: BoardService,
-    private calendarRangeState: CalendarRangeStateService,
+    protected range: CalendarRangeStateService,
     private route: ActivatedRoute,
-    private router: Router
+    private router: Router,
+    private destroyRef: DestroyRef
   ) {
     effect(() => {
       this.settingsService.settings();
-      this.calendarRangeState.viewMode();
-      this.calendarRangeState.currentDate();
-      const boardId = this.routeBoardId();
-
-      if (!this.isInitialized || boardId === null) {
+      this.range.viewMode();
+      this.range.currentDate();
+      if (this.routeBoardId() === null) {
         return;
       }
 
-      this.loadStatistics();
+      untracked(() => this.loadStatistics());
     });
   }
 
   ngOnInit(): void {
-    this.isInitialized = true;
-    this.route.paramMap.subscribe(paramMap => {
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(paramMap => {
       const boardId = this.parseBoardId(paramMap.get('boardId'));
       if (boardId === null) {
         this.navigateToSelectedBoardStatistics();
         return;
       }
 
-      this.routeBoardId.set(boardId);
       this.boardSelectionService.setSelectedBoard(boardId);
       this.loadBoardName(boardId);
-      this.loadStatistics();
+      this.routeBoardId.set(boardId);
     });
 
-    this.sessionBus.sessionsChanged$.subscribe(() => {
+    this.sessionBus.sessionsChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.routeBoardId() !== null) {
         this.loadStatistics();
       }
@@ -150,34 +148,13 @@ export class Statistics implements OnInit {
     });
   }
 
-  switchView(mode: CalendarViewMode): void {
-    this.calendarRangeState.switchView(mode);
-  }
-
-  previousPeriod(): void {
-    this.calendarRangeState.previousPeriod();
-  }
-
-  nextPeriod(): void {
-    this.calendarRangeState.nextPeriod();
-  }
-
-  goToToday(): void {
-    this.calendarRangeState.goToToday();
-  }
-
-  getCurrentPeriodLabel(): string {
-    return this.calendarRangeState.getCurrentPeriodLabel();
-  }
-
   formatDuration(seconds: number): string {
-    if (seconds < 60) {
-      return `${seconds}s`;
-    }
+    return formatHuman(seconds);
+  }
 
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+  sharePercent(task: TopTaskStatistic): number {
+    const total = this.overview().totalDuration;
+    return total > 0 ? Math.round((task.totalDuration / total) * 100) : 0;
   }
 
   formatHours(seconds: number): string {
@@ -189,7 +166,7 @@ export class Statistics implements OnInit {
   }
 
   formatTrendTooltip(point: DailyTrendPoint): string {
-    return `${this.formatDay(point.date)} • ${this.formatDuration(point.duration)} • ${point.sessionsCount} sessions`;
+    return `${this.formatDay(point.date)} · ${this.formatDuration(point.duration)} · ${pluralize(point.sessionsCount, 'session')}`;
   }
 
   private loadBoardName(boardId: number): void {
@@ -199,11 +176,7 @@ export class Statistics implements OnInit {
         this.boardDescription.set(board.description || '');
         this.boardColor.set(board.color || '#09C1BF');
       },
-      error: () => {
-        this.boardName.set('Board');
-        this.boardDescription.set('');
-        this.boardColor.set('#09C1BF');
-      }
+      error: () => this.router.navigate(['/boards'])
     });
   }
 
@@ -213,7 +186,7 @@ export class Statistics implements OnInit {
       return;
     }
 
-    const range = this.calendarRangeState.getVisibleRange();
+    const range = this.range.getPeriodRange();
     const requestId = ++this.loadStatisticsRequestId;
     this.isLoading.set(true);
     this.hasError.set(false);
@@ -369,7 +342,7 @@ export class Statistics implements OnInit {
   }
 
   private getTrendLabel(date: Date): string {
-    if (this.viewMode === 'week') {
+    if (this.range.viewMode() === 'week') {
       return `${this.dateTimeFormat.formatWeekdayShort(date)} ${this.dateTimeFormat.getDayOfMonth(date)}`;
     }
 

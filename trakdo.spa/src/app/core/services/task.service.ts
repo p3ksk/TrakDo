@@ -9,8 +9,12 @@ export class TaskService {
   constructor(private http: HttpClient) {
   }
 
-  createTask(task: Task) {
+  createTask(task: NewTaskPayload) {
     return this.http.post<number>(`${environment.apiUrl}/task/create`, task);
+  }
+
+  updateTask(taskId: number, task: TaskPayload) {
+    return this.http.put<void>(`${environment.apiUrl}/task/${taskId}`, task);
   }
 
   deleteTask(taskId: number) {

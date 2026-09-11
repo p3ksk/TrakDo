@@ -1,16 +1,19 @@
-import { Component, OnInit, computed, effect, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { Component, DestroyRef, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { SessionsService } from '../../core/services/sessions.service';
 import { SessionBusService } from '../../core/services/session-bus.service';
 import { SettingsService } from '../../core/services/settings.service';
 import { DateTimeFormatService } from '../../core/services/date-time-format.service';
 import { BoardSelectionService } from '../../core/services/board-selection.service';
-import {BoardService} from '../../core/services/board.service';
-import { CalendarRangeStateService, CalendarViewMode } from '../../core/services/calendar-range-state.service';
+import { BoardService } from '../../core/services/board.service';
+import { CalendarRangeStateService } from '../../core/services/calendar-range-state.service';
+import { formatHuman } from '../../core/utils/duration';
+import { PageHeader } from '../../shared/page-header/page-header';
+import { RangeToolbar } from '../../shared/range-toolbar/range-toolbar';
+import { SessionEdit, EditableSession } from '../../shared/session-edit/session-edit';
 
-interface Session {
+interface CalendarSession {
   id: number;
   title: string;
   taskId: number;
@@ -20,118 +23,207 @@ interface Session {
   notes: string;
 }
 
-interface DayHour {
-  hour: number;
-  sessions: Session[];
+interface EventBlock {
+  session: CalendarSession;
+  startMinute: number;
+  endMinute: number;
+  lane: number;
+  lanes: number;
+  timeLabel: string;
 }
 
-interface CalendarDay {
+interface WeekColumn {
   date: Date;
+  key: string;
+  weekday: string;
+  dayNumber: number;
+  isToday: boolean;
+  totalSeconds: number;
+  blocks: EventBlock[];
+}
+
+interface MonthCell {
+  date: Date;
+  key: string;
+  dayNumber: number;
   isCurrentMonth: boolean;
   isToday: boolean;
+  sessions: CalendarSession[];
+  totalSeconds: number;
 }
+
+const MAX_MONTH_CHIPS = 3;
+const MIN_EVENT_MINUTES = 20;
 
 @Component({
   selector: 'app-calendar',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [PageHeader, RangeToolbar, SessionEdit],
   templateUrl: './calendar.html',
   styleUrl: './calendar.css'
 })
 export class Calendar implements OnInit {
-  // Week view
-  weekDays: Date[] = [];
-  hours: number[] = Array.from({ length: 24 }, (_, i) => i);
-  workingHours = computed(() => {
-    const settings = this.settingsService.settings();
-    const hoursCount = settings.workDayEndHour - settings.workDayStartHour;
-    return Array.from({ length: hoursCount }, (_, i) => settings.workDayStartHour + i);
-  });
+  private sessionService = inject(SessionsService);
+  private sessionBus = inject(SessionBusService);
+  private settingsService = inject(SettingsService);
+  private dateTimeFormat = inject(DateTimeFormatService);
+  private boardSelectionService = inject(BoardSelectionService);
+  private boardService = inject(BoardService);
+  protected range = inject(CalendarRangeStateService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private destroyRef = inject(DestroyRef);
 
-  // Month view
-  monthDays: CalendarDay[] = [];
+  readonly hourHeight = 48;
+  readonly maxMonthChips = MAX_MONTH_CHIPS;
+  readonly weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  readonly formatHuman = formatHuman;
 
-  // Sessions data
-  sessions = signal<Session[]>([]);
-  boardName = signal<string>('Board');
+  sessions = signal<CalendarSession[]>([]);
+  isLoading = signal(true);
+  boardName = signal<string>('');
   boardDescription = signal<string>('');
   boardColor = signal<string>('#09C1BF');
+  editingSession = signal<EditableSession | null>(null);
 
-  // Modal
-  showSessionModal = false;
-  selectedSession: Session | null = null;
-
-  editSession = {
-    date: '',
-    startTime: '',
-    endTime: '',
-    note: ''
-  };
-
-  private isInitialized = false;
+  /** Ticks every 30s so running sessions and the "now" line stay current. */
+  private now = signal(Date.now());
   private routeBoardId = signal<number | null>(null);
   private loadSessionsRequestId = 0;
 
-  get viewMode(): CalendarViewMode {
-    return this.calendarRangeState.viewMode();
-  }
+  weekColumns = computed<WeekColumn[]>(() => {
+    this.settingsService.settings();
+    this.range.currentDate();
+    const sessions = this.sessions();
+    const now = this.now();
 
-  constructor(
-    private sessionService: SessionsService,
-    private sessionBus: SessionBusService,
-    private settingsService: SettingsService,
-    private dateTimeFormat: DateTimeFormatService,
-    private boardSelectionService: BoardSelectionService,
-    private boardService: BoardService,
-    private calendarRangeState: CalendarRangeStateService,
-    private route: ActivatedRoute,
-    private router: Router
-  ) {
+    return this.range.getWeekDays().map(date => {
+      const dayStart = this.dateTimeFormat.startOfDay(date);
+      const dayEnd = this.dateTimeFormat.endOfDay(date);
+      let totalSeconds = 0;
+
+      const pieces = sessions
+        .map(session => {
+          const effectiveEnd = session.endTime ?? new Date(now);
+          if (session.startTime > dayEnd || effectiveEnd < dayStart) {
+            return null;
+          }
+          const clippedStart = Math.max(session.startTime.getTime(), dayStart.getTime());
+          const clippedEnd = Math.min(effectiveEnd.getTime(), dayEnd.getTime() + 1);
+          totalSeconds += Math.max(0, (clippedEnd - clippedStart) / 1000);
+          return {
+            session,
+            startMinute: (clippedStart - dayStart.getTime()) / 60000,
+            endMinute: (clippedEnd - dayStart.getTime()) / 60000
+          };
+        })
+        .filter((piece): piece is { session: CalendarSession; startMinute: number; endMinute: number } => piece !== null);
+
+      return {
+        date,
+        key: this.dateTimeFormat.getDateKey(date),
+        weekday: this.dateTimeFormat.formatWeekdayShort(date),
+        dayNumber: this.dateTimeFormat.getDayOfMonth(date),
+        isToday: this.dateTimeFormat.isToday(date),
+        totalSeconds,
+        blocks: this.layoutBlocks(pieces)
+      };
+    });
+  });
+
+  /** Work hours, stretched to include any session that falls outside them. */
+  visibleHours = computed(() => {
+    const settings = this.settingsService.settings();
+    let startHour = settings.workDayStartHour;
+    let endHour = settings.workDayEndHour;
+
+    for (const column of this.weekColumns()) {
+      for (const block of column.blocks) {
+        startHour = Math.min(startHour, Math.floor(block.startMinute / 60));
+        endHour = Math.max(endHour, Math.ceil(Math.max(block.endMinute, block.startMinute + MIN_EVENT_MINUTES) / 60));
+      }
+    }
+
+    startHour = Math.max(0, startHour);
+    endHour = Math.min(24, Math.max(endHour, startHour + 1));
+    return Array.from({ length: endHour - startHour }, (_, i) => startHour + i);
+  });
+
+  nowLineTop = computed(() => {
+    const today = this.weekColumns().find(column => column.isToday);
+    const hours = this.visibleHours();
+    if (!today) {
+      return null;
+    }
+
+    const minute = (this.now() - this.dateTimeFormat.startOfDay(today.date).getTime()) / 60000;
+    const offset = minute - hours[0] * 60;
+    if (offset < 0 || offset > hours.length * 60) {
+      return null;
+    }
+    return (offset / 60) * this.hourHeight;
+  });
+
+  monthCells = computed<MonthCell[]>(() => {
+    this.settingsService.settings();
+    const month = this.dateTimeFormat.getMonth(this.range.currentDate());
+    const sessions = this.sessions();
+    const now = this.now();
+
+    const sessionsByDay = new Map<string, CalendarSession[]>();
+    for (const session of [...sessions].sort((a, b) => a.startTime.getTime() - b.startTime.getTime())) {
+      const key = this.dateTimeFormat.getDateKey(session.startTime);
+      sessionsByDay.set(key, [...(sessionsByDay.get(key) ?? []), session]);
+    }
+
+    return this.range.getMonthGridDays().map(date => {
+      const key = this.dateTimeFormat.getDateKey(date);
+      const daySessions = sessionsByDay.get(key) ?? [];
+      return {
+        date,
+        key,
+        dayNumber: this.dateTimeFormat.getDayOfMonth(date),
+        isCurrentMonth: this.dateTimeFormat.getMonth(date) === month,
+        isToday: this.dateTimeFormat.isToday(date),
+        sessions: daySessions,
+        totalSeconds: daySessions.reduce((sum, session) =>
+          sum + Math.max(0, ((session.endTime?.getTime() ?? now) - session.startTime.getTime()) / 1000), 0)
+      };
+    });
+  });
+
+  constructor() {
     effect(() => {
       this.settingsService.settings();
-      if (!this.isInitialized) {
+      this.range.viewMode();
+      this.range.currentDate();
+      const boardId = this.routeBoardId();
+      if (boardId === null) {
         return;
       }
 
-      this.generateWeekView();
-      this.generateMonthView();
-      this.loadSessions();
+      untracked(() => this.loadSessions());
     });
 
-    effect(() => {
-      const selectedBoardId = this.boardSelectionService.selectedBoardId();
-      if (!this.isInitialized) {
-        return;
-      }
-
-      if (this.routeBoardId() !== null) {
-        return;
-      }
-
-      if (selectedBoardId === null) {
-        return;
-      }
-
-      this.loadSessions();
-    });
+    const ticker = setInterval(() => this.now.set(Date.now()), 30_000);
+    this.destroyRef.onDestroy(() => clearInterval(ticker));
   }
 
   ngOnInit(): void {
-    this.isInitialized = true;
-    this.generateWeekView();
-    this.generateMonthView();
-    this.route.paramMap.subscribe(paramMap => {
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(paramMap => {
       const boardId = this.parseBoardId(paramMap.get('boardId'));
       if (boardId === null) {
         this.router.navigate(['/boards']);
         return;
       }
-      this.routeBoardId.set(boardId);
       this.boardSelectionService.setSelectedBoard(boardId);
       this.loadBoardName(boardId);
-      this.loadSessions();
+      this.routeBoardId.set(boardId);
     });
-    this.sessionBus.sessionsChanged$.subscribe(() => this.loadSessions());
+
+    this.sessionBus.sessionsChanged$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.loadSessions());
   }
 
   private loadBoardName(boardId: number): void {
@@ -141,59 +233,41 @@ export class Calendar implements OnInit {
         this.boardDescription.set(board.description || '');
         this.boardColor.set(board.color || '#09C1BF');
       },
-      error: () => {
-        this.boardName.set('Board');
-        this.boardDescription.set('');
-        this.boardColor.set('#09C1BF');
-      }
+      error: () => this.router.navigate(['/boards'])
     });
   }
 
   loadSessions(): void {
-    const visibleRange = this.calendarRangeState.getVisibleRange();
-    const startDate = visibleRange.start;
-    const endDate = visibleRange.end;
+    const boardId = this.routeBoardId();
+    if (boardId === null) {
+      return;
+    }
 
-    const selectedBoardId = this.routeBoardId() ?? this.boardSelectionService.selectedBoardId() ?? undefined;
+    const visibleRange = this.range.getVisibleRange();
     const requestId = ++this.loadSessionsRequestId;
+    this.isLoading.set(true);
 
     this.sessionService.getSessions(
-      this.dateTimeFormat.formatDateTimeForApi(startDate),
-      this.dateTimeFormat.formatDateTimeForApi(endDate),
-      selectedBoardId
+      this.dateTimeFormat.formatDateTimeForApi(visibleRange.start),
+      this.dateTimeFormat.formatDateTimeForApi(visibleRange.end),
+      boardId
     ).subscribe({
       next: (sessions: any[]) => {
         if (requestId !== this.loadSessionsRequestId) {
           return;
         }
-        const hasBoardIdInResponse = sessions.some(s => s.boardId !== undefined && s.boardId !== null);
-        if (selectedBoardId === undefined) {
-          this.applySessions(sessions);
-          return;
-        }
 
-        this.boardService.getColumnsWithTasks(selectedBoardId).subscribe({
-          next: columns => {
-            if (requestId !== this.loadSessionsRequestId) {
-              return;
-            }
-            const taskColorByTaskId = this.createTaskColorMap(columns);
-            const boardTaskIds = new Set(taskColorByTaskId.keys());
-            const scopedSessions = hasBoardIdInResponse
-              ? sessions.filter(session => Number(session.boardId) === selectedBoardId)
-              : sessions.filter(session => boardTaskIds.has(Number(session.taskId)));
-            this.applySessions(scopedSessions, taskColorByTaskId);
-          },
-          error: () => {
-            if (requestId !== this.loadSessionsRequestId) {
-              return;
-            }
-            const scopedSessions = hasBoardIdInResponse
-              ? sessions.filter(session => Number(session.boardId) === selectedBoardId)
-              : sessions;
-            this.applySessions(scopedSessions);
-          }
-        });
+        this.now.set(Date.now());
+        this.sessions.set(sessions.map(s => ({
+          id: Number(s.id),
+          title: s.taskTitle || 'Untitled task',
+          taskId: Number(s.taskId),
+          startTime: this.dateTimeFormat.parseApiDateTime(s.startTime),
+          endTime: s.endTime ? this.dateTimeFormat.parseApiDateTime(s.endTime) : undefined,
+          color: (typeof s.color === 'string' && s.color.trim()) || '#09C1BF',
+          notes: s.notes ?? ''
+        })));
+        this.isLoading.set(false);
       },
       error: (err: any) => {
         if (requestId !== this.loadSessionsRequestId) {
@@ -201,49 +275,79 @@ export class Calendar implements OnInit {
         }
         console.error('Failed to load sessions', err);
         this.sessions.set([]);
+        this.isLoading.set(false);
       }
     });
   }
 
-  private applySessions(sessions: any[], taskColorByTaskId: Map<number, string> = new Map()): void {
-    this.sessions.set(sessions.map(s => ({
-      id: Number(s.id),
-      title: s.taskTitle ?? s.title ?? 'Session',
-      taskId: Number(s.taskId),
-      startTime: this.dateTimeFormat.parseApiDateTime(s.startTime),
-      endTime: s.endTime ? this.dateTimeFormat.parseApiDateTime(s.endTime) : undefined,
-      color: this.resolveSessionColor(s, taskColorByTaskId),
-      notes: s.notes ?? ''
-    })));
+  /** Assigns side-by-side lanes to overlapping sessions within a day. */
+  private layoutBlocks(pieces: { session: CalendarSession; startMinute: number; endMinute: number }[]): EventBlock[] {
+    const sorted = [...pieces].sort((a, b) => a.startMinute - b.startMinute || b.endMinute - a.endMinute);
+    const blocks: EventBlock[] = [];
+    let cluster: EventBlock[] = [];
+    let laneEnds: number[] = [];
+    let clusterEnd = -1;
+
+    const flushCluster = () => {
+      for (const block of cluster) {
+        block.lanes = laneEnds.length;
+      }
+      cluster = [];
+      laneEnds = [];
+    };
+
+    for (const piece of sorted) {
+      const visualEnd = Math.max(piece.endMinute, piece.startMinute + MIN_EVENT_MINUTES);
+      if (piece.startMinute >= clusterEnd) {
+        flushCluster();
+      }
+
+      let lane = laneEnds.findIndex(end => end <= piece.startMinute);
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(visualEnd);
+      } else {
+        laneEnds[lane] = visualEnd;
+      }
+      clusterEnd = Math.max(clusterEnd, visualEnd);
+
+      const block: EventBlock = {
+        session: piece.session,
+        startMinute: piece.startMinute,
+        endMinute: piece.endMinute,
+        lane,
+        lanes: 1,
+        timeLabel: `${this.formatTime(piece.session.startTime)} – ${piece.session.endTime ? this.formatTime(piece.session.endTime) : 'now'}`
+      };
+      cluster.push(block);
+      blocks.push(block);
+    }
+    flushCluster();
+
+    return blocks;
   }
 
-  private createTaskColorMap(columns: Column[]): Map<number, string> {
-    const taskColorByTaskId = new Map<number, string>();
-    for (const column of columns) {
-      for (const task of column.tasks) {
-        if (task.color && task.color.trim().length > 0) {
-          taskColorByTaskId.set(task.id, task.color);
-        }
-      }
-    }
-    return taskColorByTaskId;
+  blockTop(block: EventBlock): number {
+    return ((block.startMinute - this.visibleHours()[0] * 60) / 60) * this.hourHeight;
   }
 
-  private resolveSessionColor(session: any, taskColorByTaskId: Map<number, string>): string {
-    const directColor = typeof session.color === 'string' ? session.color.trim() : '';
-    if (directColor.length > 0) {
-      return directColor;
-    }
+  blockHeight(block: EventBlock): number {
+    return (Math.max(block.endMinute - block.startMinute, MIN_EVENT_MINUTES) / 60) * this.hourHeight - 2;
+  }
 
-    const taskId = Number(session.taskId);
-    if (!Number.isNaN(taskId)) {
-      const taskColor = taskColorByTaskId.get(taskId);
-      if (taskColor && taskColor.trim().length > 0) {
-        return taskColor;
-      }
-    }
+  openSession(session: CalendarSession): void {
+    this.editingSession.set({
+      id: session.id,
+      taskTitle: session.title,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      notes: session.notes,
+      color: session.color
+    });
+  }
 
-    return '#09C1BF';
+  showWeekOf(date: Date): void {
+    this.range.showWeekOf(date);
   }
 
   private parseBoardId(rawBoardId: string | null): number | null {
@@ -255,198 +359,8 @@ export class Calendar implements OnInit {
     return Number.isNaN(boardId) ? null : boardId;
   }
 
-  // Week View Methods
-  generateWeekView(): void {
-    this.weekDays = this.calendarRangeState.getWeekDays();
-  }
-
-  getSessionsForDayAndHour(day: Date, hour: number): Session[] {
-    return this.sessions().filter(session => {
-      const sessionDate = new Date(session.startTime);
-      const sessionHour = this.dateTimeFormat.getHour(sessionDate);
-
-      return (
-        this.isSameDay(sessionDate, day) &&
-        (sessionHour === hour || (sessionHour < hour && this.getSessionEndHour(session) > hour))
-      );
-    });
-  }
-
-  getSessionStyle(session: Session, hour: number): any {
-    const startHour = this.dateTimeFormat.getHour(session.startTime);
-    const startMinutes = this.dateTimeFormat.getMinute(session.startTime);
-    const endTime = this.getSessionEffectiveEnd(session);
-    const endHour = this.dateTimeFormat.getHour(endTime);
-    const endMinutes = this.dateTimeFormat.getMinute(endTime);
-
-    const duration = (endHour - startHour) + (endMinutes - startMinutes) / 60;
-    const topOffset = (startMinutes / 60) * 100;
-
-    // Only show if this is the starting hour
-    if (startHour !== hour) {
-      return { display: 'none' };
-    }
-
-    return {
-      'top': `${topOffset}%`,
-      'height': `${duration * 100}%`,
-      'background': session.color,
-      'position': 'absolute',
-      'width': '100%',
-      'left': '0'
-    };
-  }
-
-  getSessionEndHour(session: Session): number {
-    const endTime = this.getSessionEffectiveEnd(session);
-    return this.dateTimeFormat.getHour(endTime) + (this.dateTimeFormat.getMinute(endTime) > 0 ? 1 : 0);
-  }
-
-  // Month View Methods
-  generateMonthView(): void {
-    const month = this.dateTimeFormat.getMonth(this.calendarRangeState.currentDate());
-    const monthDays = this.calendarRangeState.getMonthGridDays();
-
-    this.monthDays = [];
-
-    for (const date of monthDays) {
-      const calendarDay: CalendarDay = {
-        date,
-        isCurrentMonth: this.dateTimeFormat.getMonth(date) === month,
-        isToday: this.isToday(date)
-      };
-
-      this.monthDays.push(calendarDay);
-    }
-  }
-
-  getSessionsForDay(day: Date): Session[] {
-    return this.sessions().filter(session =>
-      this.isSameDay(new Date(session.startTime), day)
-    );
-  }
-
-  // Navigation Methods
-  previousPeriod(): void {
-    this.calendarRangeState.previousPeriod();
-    if (this.viewMode === 'week') {
-      this.generateWeekView();
-    } else {
-      this.generateMonthView();
-    }
-    this.loadSessions();
-  }
-
-  nextPeriod(): void {
-    this.calendarRangeState.nextPeriod();
-    if (this.viewMode === 'week') {
-      this.generateWeekView();
-    } else {
-      this.generateMonthView();
-    }
-    this.loadSessions();
-  }
-
-  goToToday(): void {
-    this.calendarRangeState.goToToday();
-    if (this.viewMode === 'week') {
-      this.generateWeekView();
-    } else {
-      this.generateMonthView();
-    }
-    this.loadSessions();
-  }
-
-  switchView(mode: 'week' | 'month'): void {
-    this.calendarRangeState.switchView(mode);
-    if (mode === 'week') {
-      this.generateWeekView();
-    } else {
-      this.generateMonthView();
-    }
-    this.loadSessions();
-  }
-
-  // Session Modal Methods
-  openSessionModal(session: Session): void {
-    this.selectedSession = session;
-    this.editSession = {
-      date: this.formatDateForInput(session.startTime),
-      startTime: this.formatTimeForInput(session.startTime),
-      endTime: session.endTime ? this.formatTimeForInput(session.endTime) : '',
-      note: session.notes ?? ''
-    };
-    this.showSessionModal = true;
-  }
-
-  closeSessionModal(): void {
-    this.showSessionModal = false;
-    this.selectedSession = null;
-    this.editSession = {
-      date: '',
-      startTime: '',
-      endTime: '',
-      note: ''
-    };
-  }
-
-  saveSession(): void {
-    if (!this.selectedSession || !this.editSession.date || !this.editSession.startTime) {
-      return;
-    }
-
-    const updateRequest = {
-      startTime: this.buildLocalDateTime(this.editSession.date, this.editSession.startTime),
-      endTime: this.editSession.endTime ? this.buildLocalDateTime(this.editSession.date, this.editSession.endTime) : undefined,
-      notes: this.editSession.note.trim()
-    };
-
-    this.sessionService.updateSession(this.selectedSession.id, updateRequest).subscribe({
-      next: () => {
-        this.loadSessions();
-        this.sessionBus.notifySessionsChanged();
-        this.closeSessionModal();
-      },
-      error: err => console.error('Failed to update session', err)
-    });
-  }
-
-  deleteSession(sessionId: number): void {
-    if (confirm('Delete this session?')) {
-      this.sessionService.deleteSession(sessionId).subscribe({
-        next: () => {
-          this.loadSessions();
-          this.sessionBus.notifySessionsChanged();
-          this.closeSessionModal();
-        },
-        error: err => console.error('Failed to delete session', err)
-      });
-    }
-  }
-
-  private buildLocalDateTime(date: string, time: string): string {
-    return `${date}T${time}:00`;
-  }
-
-  private getSessionEffectiveEnd(session: Session): Date {
-    return session.endTime ?? session.startTime;
-  }
-
-  // Utility Methods
-  isSameDay(date1: Date, date2: Date): boolean {
-    return this.dateTimeFormat.isSameDay(date1, date2);
-  }
-
-  isToday(date: Date): boolean {
-    return this.dateTimeFormat.isToday(date);
-  }
-
-  formatDate(date: Date): string {
-    return this.dateTimeFormat.formatDate(date);
-  }
-
-  formatWeekdayShort(date: Date): string {
-    return this.dateTimeFormat.formatWeekdayShort(date);
+  isRunning(session: CalendarSession): boolean {
+    return !session.endTime;
   }
 
   formatTime(date: Date): string {
@@ -461,29 +375,5 @@ export class Calendar implements OnInit {
     const period = hour >= 12 ? 'PM' : 'AM';
     const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
     return `${displayHour} ${period}`;
-  }
-
-  formatDateForInput(date: Date): string {
-    return this.dateTimeFormat.formatDateForInput(date);
-  }
-
-  formatTimeForInput(date: Date): string {
-    return this.dateTimeFormat.formatTimeForInput(date);
-  }
-
-  getCurrentPeriodLabel(): string {
-    return this.calendarRangeState.getCurrentPeriodLabel();
-  }
-
-  getDayNumber(date: Date): number {
-    return this.dateTimeFormat.getDayOfMonth(date);
-  }
-
-  getMonthSessionDuration(sessions: Session[]): number {
-    return sessions.reduce((total, session) => {
-      const endTime = this.getSessionEffectiveEnd(session);
-      const duration = (endTime.getTime() - session.startTime.getTime()) / (1000 * 60 * 60);
-      return total + duration;
-    }, 0);
   }
 }

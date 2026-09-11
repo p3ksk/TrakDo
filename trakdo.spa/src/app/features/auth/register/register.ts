@@ -1,78 +1,77 @@
-import { Component } from '@angular/core';
-import {FormBuilder, FormGroup, ReactiveFormsModule, Validators} from '@angular/forms';
+import { Component, inject, signal } from '@angular/core';
+import {AbstractControl, FormBuilder, ReactiveFormsModule, ValidationErrors, Validators} from '@angular/forms';
 import {AuthService} from '../../../core/services/auth.service';
 import {Router, RouterLink} from '@angular/router';
-import {NgIf} from '@angular/common';
+import {Icon} from '../../../shared/icon/icon';
+
+function passwordMatchValidator(form: AbstractControl): ValidationErrors | null {
+  const password = form.get('password')?.value;
+  const confirmPassword = form.get('confirmPassword')?.value;
+  return password && confirmPassword && password !== confirmPassword ? { passwordMismatch: true } : null;
+}
 
 @Component({
   selector: 'app-register',
   imports: [
     ReactiveFormsModule,
     RouterLink,
-    NgIf
+    Icon
   ],
   templateUrl: './register.html',
-  styleUrl: './register.css',
+  styleUrl: '../auth.css',
 })
 export class Register {
-  registerForm: FormGroup;
-  isLoading = false;
-  errorMessage = '';
-  showPassword = false;
-  showConfirmPassword = false;
+  private fb = inject(FormBuilder);
+  private authService = inject(AuthService);
+  private router = inject(Router);
 
-  constructor(private fb: FormBuilder, private authService: AuthService, private router: Router) {
-    this.registerForm = this.fb.group({
-      username: ['', [Validators.required, Validators.minLength(3)]],
-      password: ['', [Validators.required, Validators.minLength(6)]],
-      confirmPassword: ['', [Validators.required]]
-    }, { validators: this.passwordMatchValidator });
+  registerForm = this.fb.nonNullable.group({
+    username: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(32)]],
+    password: ['', [Validators.required, Validators.minLength(6)]],
+    confirmPassword: ['', [Validators.required]]
+  }, { validators: passwordMatchValidator });
+
+  isLoading = signal(false);
+  errorMessage = signal('');
+  showPassword = signal(false);
+
+  constructor() {
+    if (this.authService.isAuthenticated()) {
+      this.router.navigateByUrl('/');
+    }
   }
-
 
   get username() { return this.registerForm.get('username'); }
   get password() { return this.registerForm.get('password'); }
   get confirmPassword() { return this.registerForm.get('confirmPassword'); }
 
-  togglePassword(): void {
-    this.showPassword = !this.showPassword;
-  }
-
-  toggleConfirmPassword(): void {
-    this.showConfirmPassword = !this.showConfirmPassword;
-  }
-
-  passwordMatchValidator(form: FormGroup) {
-    const password = form.get('password');
-    const confirmPassword = form.get('confirmPassword');
-
-    if (password && confirmPassword && password.value !== confirmPassword.value) {
-      confirmPassword.setErrors({ passwordMismatch: true });
-      return { passwordMismatch: true };
-    }
-
-    return null;
-  }
-
   onSubmit(): void {
-    if (this.registerForm.valid && !this.isLoading) {
-      this.isLoading = true;
-      this.errorMessage = '';
-
-      const { confirmPassword, ...registerData } = this.registerForm.value;
-
-      this.authService.register(registerData).subscribe({
-        next: () => {
-          this.router.navigate(['/']);
-        },
-        error: (error) => {
-          this.errorMessage = error.error?.message || 'Registration failed. Please try again.';
-          this.isLoading = false;
-        },
-        complete: () => {
-          this.isLoading = false;
-        }
-      });
+    if (this.registerForm.invalid) {
+      this.registerForm.markAllAsTouched();
+      return;
     }
+    if (this.isLoading()) {
+      return;
+    }
+
+    this.isLoading.set(true);
+    this.errorMessage.set('');
+
+    const { confirmPassword, ...registerData } = this.registerForm.getRawValue();
+
+    this.authService.register(registerData).subscribe({
+      next: () => {
+        this.router.navigate(['/']);
+      },
+      error: (error) => {
+        this.errorMessage.set(error.status === 429
+          ? 'Too many attempts. Wait a minute and try again.'
+          : (typeof error.error === 'string' && error.error) || error.error?.message || 'Registration failed. The username may already be taken.');
+        this.isLoading.set(false);
+      },
+      complete: () => {
+        this.isLoading.set(false);
+      }
+    });
   }
 }

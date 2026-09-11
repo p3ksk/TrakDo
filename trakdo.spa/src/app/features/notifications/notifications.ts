@@ -1,9 +1,10 @@
 import {Component, inject} from '@angular/core';
 import {NotificationService, Notification} from '../../core/services/notification.service';
+import {Icon, IconName} from '../../shared/icon/icon';
 
 @Component({
   selector: 'app-notifications',
-  imports: [],
+  imports: [Icon],
   templateUrl: './notifications.html',
   styleUrl: './notifications.css',
 })
@@ -15,12 +16,12 @@ export class Notifications {
     this.notificationService.remove(id);
   }
 
-  getIcon(type: Notification['type']): string {
-    const icons = {
-      success: '✓',
-      error: '✕',
-      warning: '⚠',
-      info: 'i'
+  getIcon(type: Notification['type']): IconName {
+    const icons: Record<Notification['type'], IconName> = {
+      success: 'check',
+      error: 'alert',
+      warning: 'alert',
+      info: 'info'
     };
     return icons[type];
   }

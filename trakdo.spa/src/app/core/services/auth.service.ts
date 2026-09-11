@@ -57,20 +57,26 @@ export class AuthService {
     });
   }
 
+  // Settings are loaded by MainLayout once the user lands in the app. Loading them from here would issue an
+  // HTTP request while AuthService is still being constructed, and the auth interceptor (which injects
+  // AuthService) would then fail with a circular dependency error (NG0200).
   private setCurrentUser(user: User) {
     localStorage.setItem(this.USER, JSON.stringify(user));
     this.currentUser.set(user);
     this.isAuthenticated.set(true);
-    this.settingsService.loadSettings().subscribe({
-      error: (err) => console.error('Failed to load user settings', err)
-    });
   }
 
   private loadUserFromLocalStorage() {
     const userJson = localStorage.getItem(this.USER);
-    if(userJson) {
-      const user = JSON.parse(userJson);
-      this.setCurrentUser(user);
+    if (!userJson) {
+      return;
+    }
+
+    try {
+      this.currentUser.set(JSON.parse(userJson));
+      this.isAuthenticated.set(true);
+    } catch {
+      localStorage.removeItem(this.USER);
     }
   }
 }

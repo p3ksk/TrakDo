@@ -1,14 +1,19 @@
-import { Component, OnInit, effect, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { Component, DestroyRef, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { SessionsService } from '../../core/services/sessions.service';
 import { SessionBusService } from '../../core/services/session-bus.service';
 import { DateTimeFormatService } from '../../core/services/date-time-format.service';
 import { BoardSelectionService } from '../../core/services/board-selection.service';
 import { BoardService } from '../../core/services/board.service';
-import { CalendarRangeStateService, CalendarViewMode } from '../../core/services/calendar-range-state.service';
+import { CalendarRangeStateService } from '../../core/services/calendar-range-state.service';
 import { SettingsService } from '../../core/services/settings.service';
+import { NotificationService } from '../../core/services/notification.service';
+import { formatHuman, pluralize } from '../../core/utils/duration';
+import { Icon } from '../../shared/icon/icon';
+import { PageHeader } from '../../shared/page-header/page-header';
+import { RangeToolbar } from '../../shared/range-toolbar/range-toolbar';
+import { EditableSession, SessionEdit } from '../../shared/session-edit/session-edit';
 
 interface SessionNode {
   id: number;
@@ -24,88 +29,116 @@ interface SessionNode {
 interface TaskSessionGroup {
   taskId: number;
   taskTitle: string;
+  color: string;
   sessions: SessionNode[];
   totalDuration: number;
-  sessionsCount: number;
-  isExpanded: boolean;
+  lastActivity: number;
+  isRunning: boolean;
 }
 
 @Component({
   selector: 'app-sessions',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [Icon, PageHeader, RangeToolbar, SessionEdit],
   templateUrl: './sessions.html',
   styleUrl: './sessions.css'
 })
 export class Sessions implements OnInit {
-  boardName = signal<string>('Board');
+  private sessionsService = inject(SessionsService);
+  private sessionBus = inject(SessionBusService);
+  private settingsService = inject(SettingsService);
+  private dateTimeFormat = inject(DateTimeFormatService);
+  private boardSelectionService = inject(BoardSelectionService);
+  private boardService = inject(BoardService);
+  private notification = inject(NotificationService);
+  protected range = inject(CalendarRangeStateService);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private destroyRef = inject(DestroyRef);
+
+  readonly formatHuman = formatHuman;
+  readonly pluralize = pluralize;
+
+  boardName = signal<string>('');
   boardDescription = signal<string>('');
   boardColor = signal<string>('#09C1BF');
-  sessionGroups = signal<TaskSessionGroup[]>([]);
+  isLoading = signal(true);
+  editingSession = signal<EditableSession | null>(null);
 
-  showSessionModal = false;
-  selectedSession: SessionNode | null = null;
-  editSession = {
-    date: '',
-    startTime: '',
-    endTime: '',
-    note: ''
-  };
-
-  private isInitialized = false;
+  private sessionNodes = signal<SessionNode[]>([]);
+  private collapsedTaskIds = signal<Set<number>>(new Set());
+  private now = signal(Date.now());
   private routeBoardId = signal<number | null>(null);
-  private expandedTaskIds = signal<Set<number>>(new Set());
   private loadSessionsRequestId = 0;
 
-  get viewMode(): CalendarViewMode {
-    return this.calendarRangeState.viewMode();
-  }
+  sessionGroups = computed<TaskSessionGroup[]>(() => {
+    this.now();
+    const groups = new Map<number, TaskSessionGroup>();
 
-  constructor(
-    private sessionsService: SessionsService,
-    private sessionBus: SessionBusService,
-    private settingsService: SettingsService,
-    private dateTimeFormat: DateTimeFormatService,
-    private boardSelectionService: BoardSelectionService,
-    private boardService: BoardService,
-    private calendarRangeState: CalendarRangeStateService,
-    private route: ActivatedRoute,
-    private router: Router
-  ) {
+    for (const session of this.sessionNodes()) {
+      const group = groups.get(session.taskId) ?? {
+        taskId: session.taskId,
+        taskTitle: session.taskTitle,
+        color: session.color,
+        sessions: [],
+        totalDuration: 0,
+        lastActivity: 0,
+        isRunning: false
+      };
+      group.sessions.push(session);
+      group.totalDuration += this.getSessionDuration(session);
+      group.lastActivity = Math.max(group.lastActivity, session.startTime.getTime());
+      group.isRunning ||= this.isRunning(session);
+      groups.set(session.taskId, group);
+    }
+
+    return Array.from(groups.values())
+      .map(group => ({ ...group, sessions: [...group.sessions].sort((a, b) => b.startTime.getTime() - a.startTime.getTime()) }))
+      .sort((a, b) => Number(b.isRunning) - Number(a.isRunning) || b.lastActivity - a.lastActivity);
+  });
+
+  totals = computed(() => ({
+    sessions: this.sessionNodes().length,
+    duration: this.sessionGroups().reduce((sum, group) => sum + group.totalDuration, 0)
+  }));
+
+  constructor() {
     effect(() => {
       this.settingsService.settings();
-      this.calendarRangeState.viewMode();
-      this.calendarRangeState.currentDate();
-      const boardId = this.routeBoardId();
-
-      if (!this.isInitialized || boardId === null) {
+      this.range.viewMode();
+      this.range.currentDate();
+      if (this.routeBoardId() === null) {
         return;
       }
 
-      this.loadSessions();
+      untracked(() => this.loadSessions());
     });
   }
 
   ngOnInit(): void {
-    this.isInitialized = true;
-    this.route.paramMap.subscribe(paramMap => {
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(paramMap => {
       const boardId = this.parseBoardId(paramMap.get('boardId'));
       if (boardId === null) {
         this.router.navigate(['/boards']);
         return;
       }
 
-      this.routeBoardId.set(boardId);
       this.boardSelectionService.setSelectedBoard(boardId);
       this.loadBoardName(boardId);
-      this.loadSessions();
+      this.routeBoardId.set(boardId);
     });
 
-    this.sessionBus.sessionsChanged$.subscribe(() => {
-      if (this.routeBoardId() !== null) {
-        this.loadSessions();
+    this.sessionBus.sessionsChanged$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.loadSessions());
+
+    // Keep durations of running sessions fresh.
+    const ticker = setInterval(() => {
+      if (this.sessionNodes().some(session => this.isRunning(session))) {
+        this.now.set(Date.now());
       }
-    });
+    }, 30_000);
+    this.destroyRef.onDestroy(() => clearInterval(ticker));
   }
 
   private loadBoardName(boardId: number): void {
@@ -115,11 +148,7 @@ export class Sessions implements OnInit {
         this.boardDescription.set(board.description || '');
         this.boardColor.set(board.color || '#09C1BF');
       },
-      error: () => {
-        this.boardName.set('Board');
-        this.boardDescription.set('');
-        this.boardColor.set('#09C1BF');
-      }
+      error: () => this.router.navigate(['/boards'])
     });
   }
 
@@ -129,8 +158,9 @@ export class Sessions implements OnInit {
       return;
     }
 
-    const range = this.calendarRangeState.getVisibleRange();
+    const range = this.range.getPeriodRange();
     const requestId = ++this.loadSessionsRequestId;
+    this.isLoading.set(true);
 
     this.sessionsService.getSessions(
       this.dateTimeFormat.formatDateTimeForApi(range.start),
@@ -142,258 +172,84 @@ export class Sessions implements OnInit {
           return;
         }
 
-        this.boardService.getColumnsWithTasks(boardId).subscribe({
-          next: columns => {
-            if (requestId !== this.loadSessionsRequestId) {
-              return;
-            }
-
-            const taskColorByTaskId = this.createTaskColorMap(columns);
-            const sessionNodes = sessions.map(session => {
-              const startTime = this.dateTimeFormat.parseApiDateTime(session.startTime);
-              const endTime = session.endTime ? this.dateTimeFormat.parseApiDateTime(session.endTime) : undefined;
-              const duration = Number(session.duration ?? 0);
-
-              return {
-                id: Number(session.id),
-                taskId: Number(session.taskId),
-                taskTitle: session.taskTitle ?? `Task #${session.taskId}`,
-                startTime,
-                endTime,
-                duration,
-                notes: session.notes ?? '',
-                color: this.resolveSessionColor(session, taskColorByTaskId)
-              } satisfies SessionNode;
-            });
-
-            this.buildSessionGroups(sessionNodes);
-          },
-          error: () => {
-            if (requestId !== this.loadSessionsRequestId) {
-              return;
-            }
-
-            const sessionNodes = sessions.map(session => {
-              const startTime = this.dateTimeFormat.parseApiDateTime(session.startTime);
-              const endTime = session.endTime ? this.dateTimeFormat.parseApiDateTime(session.endTime) : undefined;
-              const duration = Number(session.duration ?? 0);
-
-              return {
-                id: Number(session.id),
-                taskId: Number(session.taskId),
-                taskTitle: session.taskTitle ?? `Task #${session.taskId}`,
-                startTime,
-                endTime,
-                duration,
-                notes: session.notes ?? '',
-                color: this.resolveSessionColor(session, new Map())
-              } satisfies SessionNode;
-            });
-
-            this.buildSessionGroups(sessionNodes);
-          }
-        });
+        this.now.set(Date.now());
+        this.sessionNodes.set(sessions.map(session => ({
+          id: Number(session.id),
+          taskId: Number(session.taskId),
+          taskTitle: session.taskTitle || `Task #${session.taskId}`,
+          startTime: this.dateTimeFormat.parseApiDateTime(session.startTime),
+          endTime: session.endTime ? this.dateTimeFormat.parseApiDateTime(session.endTime) : undefined,
+          duration: Number(session.duration ?? 0),
+          notes: session.notes ?? '',
+          color: (typeof session.color === 'string' && session.color.trim()) || '#09C1BF'
+        })));
+        this.isLoading.set(false);
       },
       error: err => {
+        if (requestId !== this.loadSessionsRequestId) {
+          return;
+        }
         console.error('Failed to load sessions', err);
-        this.sessionGroups.set([]);
+        this.sessionNodes.set([]);
+        this.isLoading.set(false);
+        this.notification.error('Failed to load sessions.');
       }
     });
   }
 
-  private buildSessionGroups(sessions: SessionNode[]): void {
-    const existingExpanded = new Set(this.expandedTaskIds());
-    const groupedByTask = new Map<number, SessionNode[]>();
-    const taskTitles = new Map<number, string>();
-
-    for (const session of sessions) {
-      const existingSessions = groupedByTask.get(session.taskId) ?? [];
-      existingSessions.push(session);
-      groupedByTask.set(session.taskId, existingSessions);
-      taskTitles.set(session.taskId, session.taskTitle);
-    }
-
-    const groups = Array.from(groupedByTask.entries())
-      .map(([taskId, taskSessions]) => {
-        const sortedSessions = [...taskSessions].sort((a, b) => b.startTime.getTime() - a.startTime.getTime());
-        const totalDuration = sortedSessions.reduce((sum, session) => sum + this.getSessionDuration(session), 0);
-        return {
-          taskId,
-          taskTitle: taskTitles.get(taskId) ?? `Task #${taskId}`,
-          sessions: sortedSessions,
-          totalDuration,
-          sessionsCount: sortedSessions.length,
-          isExpanded: existingExpanded.has(taskId) || existingExpanded.size === 0
-        } satisfies TaskSessionGroup;
-      })
-      .sort((a, b) => a.taskTitle.localeCompare(b.taskTitle));
-
-    if (existingExpanded.size === 0) {
-      this.expandedTaskIds.set(new Set(groups.map(group => group.taskId)));
-    }
-
-    this.sessionGroups.set(groups);
-  }
-
-  private createTaskColorMap(columns: Column[]): Map<number, string> {
-    const taskColorByTaskId = new Map<number, string>();
-    for (const column of columns) {
-      for (const task of column.tasks) {
-        if (task.color && task.color.trim().length > 0) {
-          taskColorByTaskId.set(task.id, task.color);
-        }
-      }
-    }
-    return taskColorByTaskId;
-  }
-
-  private resolveSessionColor(session: any, taskColorByTaskId: Map<number, string>): string {
-    const directColor = typeof session.color === 'string' ? session.color.trim() : '';
-    if (directColor.length > 0) {
-      return directColor;
-    }
-
-    const taskId = Number(session.taskId);
-    if (!Number.isNaN(taskId)) {
-      const taskColor = taskColorByTaskId.get(taskId);
-      if (taskColor && taskColor.trim().length > 0) {
-        return taskColor;
-      }
-    }
-
-    return '#09C1BF';
-  }
-
-  switchView(mode: CalendarViewMode): void {
-    this.calendarRangeState.switchView(mode);
-  }
-
-  previousPeriod(): void {
-    this.calendarRangeState.previousPeriod();
-  }
-
-  nextPeriod(): void {
-    this.calendarRangeState.nextPeriod();
-  }
-
-  goToToday(): void {
-    this.calendarRangeState.goToToday();
-  }
-
-  expandAllTaskGroups(): void {
-    const expandedTaskIds = new Set(this.sessionGroups().map(group => group.taskId));
-    this.expandedTaskIds.set(expandedTaskIds);
-    this.sessionGroups.update(groups => groups.map(group => ({ ...group, isExpanded: true })));
-  }
-
-  collapseAllTaskGroups(): void {
-    this.expandedTaskIds.set(new Set());
-    this.sessionGroups.update(groups => groups.map(group => ({ ...group, isExpanded: false })));
-  }
-
-  hasAnyExpandedGroups(): boolean {
-    return this.sessionGroups().some(group => group.isExpanded);
-  }
-
-  hasAnyCollapsedGroups(): boolean {
-    return this.sessionGroups().some(group => !group.isExpanded);
+  isExpanded(taskId: number): boolean {
+    return !this.collapsedTaskIds().has(taskId);
   }
 
   toggleTaskGroup(taskId: number): void {
-    const expandedTaskIds = new Set(this.expandedTaskIds());
-    if (expandedTaskIds.has(taskId)) {
-      expandedTaskIds.delete(taskId);
-    } else {
-      expandedTaskIds.add(taskId);
-    }
-    this.expandedTaskIds.set(expandedTaskIds);
-
-    this.sessionGroups.update(groups =>
-      groups.map(group => group.taskId === taskId ? { ...group, isExpanded: expandedTaskIds.has(taskId) } : group)
-    );
-  }
-
-  openSessionModal(session: SessionNode): void {
-    this.selectedSession = session;
-    this.editSession = {
-      date: this.dateTimeFormat.formatDateForInput(session.startTime),
-      startTime: this.dateTimeFormat.formatTimeForInput(session.startTime),
-      endTime: session.endTime ? this.dateTimeFormat.formatTimeForInput(session.endTime) : '',
-      note: session.notes ?? ''
-    };
-    this.showSessionModal = true;
-  }
-
-  closeSessionModal(): void {
-    this.showSessionModal = false;
-    this.selectedSession = null;
-    this.editSession = {
-      date: '',
-      startTime: '',
-      endTime: '',
-      note: ''
-    };
-  }
-
-  saveSession(): void {
-    if (!this.selectedSession || !this.editSession.date || !this.editSession.startTime) {
-      return;
-    }
-
-    const request = {
-      startTime: this.buildLocalDateTime(this.editSession.date, this.editSession.startTime),
-      endTime: this.editSession.endTime ? this.buildLocalDateTime(this.editSession.date, this.editSession.endTime) : undefined,
-      notes: this.editSession.note.trim()
-    };
-
-    this.sessionsService.updateSession(this.selectedSession.id, request).subscribe({
-      next: () => {
-        this.closeSessionModal();
-        this.loadSessions();
-        this.sessionBus.notifySessionsChanged();
-      },
-      error: err => console.error('Failed to update session', err)
+    this.collapsedTaskIds.update(collapsed => {
+      const next = new Set(collapsed);
+      next.has(taskId) ? next.delete(taskId) : next.add(taskId);
+      return next;
     });
   }
 
-  deleteSession(sessionId: number): void {
-    if (!confirm('Delete this session?')) {
-      return;
-    }
+  expandAll(): void {
+    this.collapsedTaskIds.set(new Set());
+  }
 
-    this.sessionsService.deleteSession(sessionId).subscribe({
-      next: () => {
-        if (this.selectedSession?.id === sessionId) {
-          this.closeSessionModal();
-        }
-        this.loadSessions();
-        this.sessionBus.notifySessionsChanged();
-      },
-      error: err => console.error('Failed to delete session', err)
+  collapseAll(): void {
+    this.collapsedTaskIds.set(new Set(this.sessionGroups().map(group => group.taskId)));
+  }
+
+  allCollapsed(): boolean {
+    const groups = this.sessionGroups();
+    return groups.length > 0 && groups.every(group => this.collapsedTaskIds().has(group.taskId));
+  }
+
+  openSession(session: SessionNode): void {
+    this.editingSession.set({
+      id: session.id,
+      taskTitle: session.taskTitle,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      notes: session.notes,
+      color: session.color
     });
   }
 
-  getCurrentPeriodLabel(): string {
-    return this.calendarRangeState.getCurrentPeriodLabel();
+  deleteSession(session: SessionNode): void {
+    if (!confirm(`Delete this ${formatHuman(this.getSessionDuration(session))} session on "${session.taskTitle}"?`)) {
+      return;
+    }
+
+    this.sessionsService.deleteSession(session.id).subscribe({
+      next: () => this.sessionBus.notifySessionsChanged(),
+      error: () => this.notification.error('Failed to delete session.')
+    });
   }
 
-  formatDate(date: Date): string {
-    return this.dateTimeFormat.formatDate(date);
+  formatDay(date: Date): string {
+    return `${this.dateTimeFormat.formatWeekdayShort(date)}, ${this.dateTimeFormat.formatDate(date)}`;
   }
 
   formatTime(date: Date): string {
     return this.dateTimeFormat.formatTime(date);
-  }
-
-  formatDuration(seconds: number): string {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-
-    if (hours === 0) {
-      return `${minutes}m`;
-    }
-
-    return `${hours}h ${minutes}m`;
   }
 
   isRunning(session: SessionNode): boolean {
@@ -401,19 +257,13 @@ export class Sessions implements OnInit {
   }
 
   getSessionDuration(session: SessionNode): number {
-    if (session.duration > 0) {
-      return session.duration;
-    }
-
     if (session.endTime) {
-      return Math.max(0, Math.floor((session.endTime.getTime() - session.startTime.getTime()) / 1000));
+      return session.duration > 0
+        ? session.duration
+        : Math.max(0, Math.floor((session.endTime.getTime() - session.startTime.getTime()) / 1000));
     }
 
-    return Math.max(0, Math.floor((Date.now() - session.startTime.getTime()) / 1000));
-  }
-
-  private buildLocalDateTime(date: string, time: string): string {
-    return `${date}T${time}:00`;
+    return Math.max(0, Math.floor((this.now() - session.startTime.getTime()) / 1000));
   }
 
   private parseBoardId(rawBoardId: string | null): number | null {

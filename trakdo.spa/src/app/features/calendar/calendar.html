@@ -1,204 +1,98 @@
-<div class="calendar-container">
-  <!-- Calendar Header -->
-  <div class="calendar-header app-board-page-header">
-    <div class="header-left app-board-header-left">
-      <div class="board-info app-board-info">
-        <div class="board-color-indicator app-board-color-indicator" [style.background]="boardColor()"></div>
-        <div>
-          <h1 class="app-board-title">{{ boardName() }} - Calendar</h1>
-          <p class="board-description app-board-description">{{ boardDescription() }}</p>
+<app-page-header eyebrow="Calendar" [title]="boardName()" [subtitle]="boardDescription()" [color]="boardColor()">
+  <app-range-toolbar/>
+</app-page-header>
+
+@if (range.viewMode() === 'week') {
+  <div class="week panel" [class.is-loading]="isLoading()" [style.--hour-h.px]="hourHeight">
+    <div class="week-head">
+      <div class="gutter-head"></div>
+      @for (day of weekColumns(); track day.key) {
+        <div class="day-head" [class.is-today]="day.isToday">
+          <span class="dow">{{ day.weekday }}</span>
+          <span class="dom">{{ day.dayNumber }}</span>
+          <span class="day-total mono" [class.is-empty]="day.totalSeconds < 60">{{ day.totalSeconds >= 60 ? formatHuman(day.totalSeconds) : '–' }}</span>
         </div>
-      </div>
+      }
     </div>
 
-    <div class="header-right app-board-header-right">
-      <!-- View Toggle -->
-      <div class="view-toggle app-view-toggle">
-        <button
-          class="toggle-btn app-toggle-btn"
-          [class.active]="viewMode === 'week'"
-          (click)="switchView('week')"
-        >
-          Week
-        </button>
-        <button
-          class="toggle-btn app-toggle-btn"
-          [class.active]="viewMode === 'month'"
-          (click)="switchView('month')"
-        >
-          Month
-        </button>
+    <div class="week-body" [style.height.px]="visibleHours().length * hourHeight">
+      <div class="gutter">
+        @for (hour of visibleHours(); track hour; let first = $first) {
+          @if (!first) {
+            <span class="hour-label" [style.top.px]="$index * hourHeight">{{ formatHour(hour) }}</span>
+          }
+        }
       </div>
 
-      <!-- Navigation -->
-      <div class="calendar-nav app-calendar-nav">
-        <button class="nav-btn app-nav-btn" (click)="previousPeriod()">←</button>
-        <button class="nav-btn app-nav-btn today" (click)="goToToday()">Today</button>
-        <button class="nav-btn app-nav-btn" (click)="nextPeriod()">→</button>
-      </div>
-
-      <div class="current-period app-current-period">
-        {{ getCurrentPeriodLabel() }}
-      </div>
-
-    </div>
-  </div>
-
-  <!-- Week View -->
-  <div class="week-view" *ngIf="viewMode === 'week'">
-    <div class="week-grid">
-      <!-- Time Column -->
-      <div class="time-column">
-        <div class="time-header">Time</div>
-        <div class="time-slots">
-          <div class="time-slot" *ngFor="let hour of workingHours()">
-            <span class="time-label">{{ formatHour(hour) }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Day Columns -->
-      <div class="day-column" *ngFor="let day of weekDays">
-        <div class="day-header" [class.today]="isToday(day)">
-          <div class="day-name">{{ formatWeekdayShort(day) }}</div>
-          <div class="day-date">{{ getDayNumber(day) }}</div>
-        </div>
-
-        <div class="day-slots">
-          <div
-            class="hour-slot"
-            *ngFor="let hour of workingHours()"
-            [class.has-sessions]="getSessionsForDayAndHour(day, hour).length > 0"
-          >
-            <!-- Session Blocks -->
-            <div
-              *ngFor="let session of getSessionsForDayAndHour(day, hour)"
-              class="session-block"
-              [ngStyle]="getSessionStyle(session, hour)"
-              (click)="openSessionModal(session)"
+      @for (day of weekColumns(); track day.key) {
+        <div class="day-col" [class.is-today]="day.isToday">
+          @for (block of day.blocks; track block.session.id) {
+            <button
+              type="button"
+              class="event"
+              [class.is-running]="isRunning(block.session)"
+              [class.is-compact]="blockHeight(block) < 38"
+              [style.--event-color]="block.session.color"
+              [style.top.px]="blockTop(block)"
+              [style.height.px]="blockHeight(block)"
+              [style.left]="'calc(' + (block.lane / block.lanes * 100) + '% + 2px)'"
+              [style.width]="'calc(' + (100 / block.lanes) + '% - 4px)'"
+              [title]="block.session.title + ' · ' + block.timeLabel"
+              (click)="openSession(block.session)"
             >
-              <div class="session-title">{{ session.title }}</div>
-              <div class="session-time">
-                {{ formatTime(session.startTime) }} - {{ session.endTime ? formatTime(session.endTime) : 'Running' }}
-              </div>
-            </div>
-          </div>
+              <span class="event-title">{{ block.session.title }}</span>
+              <span class="event-time">{{ block.timeLabel }}</span>
+            </button>
+          }
+
+          @if (day.isToday && nowLineTop() !== null) {
+            <div class="now-line" [style.top.px]="nowLineTop()"></div>
+          }
         </div>
-      </div>
+      }
     </div>
   </div>
-
-  <!-- Month View -->
-  <div class="month-view" *ngIf="viewMode === 'month'">
-    <!-- Weekday Headers -->
+} @else {
+  <div class="month panel" [class.is-loading]="isLoading()">
+    <div class="month-head">
+      @for (label of weekdayLabels; track label) {
+        <div class="month-dow">{{ label }}</div>
+      }
+    </div>
     <div class="month-grid">
-      <div class="weekday-header" *ngFor="let day of ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']">
-        {{ day }}
-      </div>
+      @for (cell of monthCells(); track cell.key) {
+        <div class="month-cell" [class.is-other-month]="!cell.isCurrentMonth" [class.is-today]="cell.isToday">
+          <div class="month-cell-head">
+            <button type="button" class="day-number" (click)="showWeekOf(cell.date)" [attr.aria-label]="'Show week of day ' + cell.dayNumber" title="Show this week">
+              {{ cell.dayNumber }}
+            </button>
+            @if (cell.totalSeconds >= 60) {
+              <span class="cell-total mono">{{ formatHuman(cell.totalSeconds) }}</span>
+            }
+          </div>
 
-      <!-- Calendar Days -->
-      <div
-        class="month-day"
-        *ngFor="let calendarDay of monthDays"
-        [class.other-month]="!calendarDay.isCurrentMonth"
-        [class.today]="calendarDay.isToday"
-      >
-        <div class="day-number">{{ getDayNumber(calendarDay.date) }}</div>
-
-        <div class="day-sessions">
-          <div
-            class="month-session"
-            *ngFor="let session of getSessionsForDay(calendarDay.date)"
-            [style.background]="session.color"
-            (click)="openSessionModal(session)"
-          >
-            <span class="session-dot"></span>
-            <span class="session-name">{{ session.title }}</span>
+          <div class="cell-sessions">
+            @for (session of cell.sessions.slice(0, maxMonthChips); track session.id) {
+              <button type="button" class="month-chip" [class.is-running]="isRunning(session)" [style.--event-color]="session.color"
+                      [title]="session.title + ' · ' + formatTime(session.startTime)" (click)="openSession(session)">
+                <span class="chip-dot"></span>
+                <span class="chip-title">{{ session.title }}</span>
+              </button>
+            }
+            @if (cell.sessions.length > maxMonthChips) {
+              <button type="button" class="more-link" (click)="showWeekOf(cell.date)">+{{ cell.sessions.length - maxMonthChips }} more</button>
+            }
           </div>
         </div>
-
-        <div class="session-summary" *ngIf="getSessionsForDay(calendarDay.date).length > 0">
-          {{ getMonthSessionDuration(getSessionsForDay(calendarDay.date)).toFixed(1) }}h
-        </div>
-      </div>
+      }
     </div>
   </div>
-</div>
+}
 
-<!-- Session Modal -->
-<div class="modal-overlay app-modal-overlay" *ngIf="showSessionModal" (click)="closeSessionModal()">
-  <div class="modal-content app-modal-content" (click)="$event.stopPropagation()">
-    <div class="modal-header app-modal-header">
-      <h2>Edit Session</h2>
-      <button class="close-btn app-close-btn" (click)="closeSessionModal()">✕</button>
-    </div>
+@if (!isLoading() && sessions().length === 0) {
+  <p class="calendar-hint">No sessions in this {{ range.viewMode() }}. Start a timer on a task and it will show up here.</p>
+}
 
-    <form (ngSubmit)="saveSession()" class="modal-form app-modal-form">
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Date</label>
-        <input
-          type="date"
-          class="form-control app-form-control"
-          [(ngModel)]="editSession.date"
-          name="date"
-          required
-        />
-      </div>
-
-      <div class="form-row app-form-row">
-        <div class="form-group app-form-group">
-          <label class="form-label app-form-label">Start Time</label>
-          <input
-            type="time"
-            class="form-control app-form-control"
-            [(ngModel)]="editSession.startTime"
-            name="startTime"
-            required
-          />
-        </div>
-
-        <div class="form-group app-form-group">
-          <label class="form-label app-form-label">End Time</label>
-          <input
-            type="time"
-            class="form-control app-form-control"
-            [(ngModel)]="editSession.endTime"
-            name="endTime"
-          />
-        </div>
-      </div>
-
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Note</label>
-        <textarea
-          class="form-control app-form-control"
-          [(ngModel)]="editSession.note"
-          name="note"
-          rows="3"
-          placeholder="Add session notes"
-        ></textarea>
-      </div>
-
-      <div class="modal-actions app-modal-actions">
-        <button
-          type="button"
-          class="app-modal-btn app-modal-btn-danger"
-          *ngIf="selectedSession"
-          (click)="deleteSession(selectedSession.id)"
-        >
-          Delete
-        </button>
-        <button type="button" class="app-modal-btn app-modal-btn-secondary" (click)="closeSessionModal()">
-          Cancel
-        </button>
-        <button
-          type="submit"
-          class="app-modal-btn app-modal-btn-primary"
-          [disabled]="!editSession.date || !editSession.startTime"
-        >
-          Save
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
+@if (editingSession(); as session) {
+  <app-session-edit [session]="session" (closed)="editingSession.set(null)"/>
+}

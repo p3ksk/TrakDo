@@ -1,111 +1,75 @@
-<div class="auth-container">
-  <div class="auth-card">
-    <div class="card-header">
-      <div class="logo-container">
-        <img class="logo-img" src="/assets/icon-small.png" alt="logo"/>
-        <h1 class="logo-text">TaskFlow</h1>
-      </div>
-      <p class="subtitle">Create your account and start organizing</p>
+<div class="auth-card">
+  <div class="auth-brand">
+    <img src="/assets/icon-small.png" alt=""/>
+    <span>TrakDo</span>
+  </div>
+  <h1 class="auth-title">Create your account</h1>
+  <p class="auth-subtitle">Organize tasks on boards and track the time you spend on them.</p>
+
+  <form [formGroup]="registerForm" (ngSubmit)="onSubmit()" class="auth-form" novalidate>
+    <div class="field">
+      <label for="username" class="field-label">Username</label>
+      <input id="username" type="text" formControlName="username" class="input" autocomplete="username" autofocus maxlength="32"
+             [class.is-invalid]="username?.invalid && username?.touched"/>
+      @if (username?.invalid && username?.touched) {
+        <span class="field-error">
+          @if (username?.errors?.['required']) { Choose a username. }
+          @else if (username?.errors?.['minlength']) { Use at least 3 characters. }
+          @else if (username?.errors?.['maxlength']) { Use at most 32 characters. }
+        </span>
+      } @else {
+        <span class="field-hint">3–32 characters.</span>
+      }
     </div>
 
-    <form [formGroup]="registerForm" (ngSubmit)="onSubmit()" class="auth-form">
-      <div class="form-group app-form-group" [class.has-error]="username?.invalid && username?.touched">
-        <label for="username" class="form-label app-form-label">Username</label>
-        <div class="input-wrapper">
-          <input
-            id="username"
-            type="text"
-            formControlName="username"
-            class="form-input app-form-control"
-            placeholder="johndoe"
-            [class.error]="username?.invalid && username?.touched"
-          />
-          <span class="input-icon">👤</span>
-        </div>
-        <span class="error-message" *ngIf="username?.invalid && username?.touched">
-          <span *ngIf="username?.errors?.['required']">Username is required</span>
-          <span *ngIf="username?.errors?.['minlength']">Username must be at least 3 characters</span>
+    <div class="field">
+      <label for="password" class="field-label">Password</label>
+      <div class="password-wrap">
+        <input id="password" [type]="showPassword() ? 'text' : 'password'" formControlName="password" class="input"
+               autocomplete="new-password" [class.is-invalid]="password?.invalid && password?.touched"/>
+        <button type="button" class="btn btn-ghost btn-icon btn-sm password-toggle" (click)="showPassword.set(!showPassword())"
+                [attr.aria-label]="showPassword() ? 'Hide passwords' : 'Show passwords'" [attr.aria-pressed]="showPassword()">
+          <app-icon [name]="showPassword() ? 'eye-off' : 'eye'" [size]="17"/>
+        </button>
+      </div>
+      @if (password?.invalid && password?.touched) {
+        <span class="field-error">
+          @if (password?.errors?.['required']) { Choose a password. } @else { Use at least 6 characters. }
         </span>
-      </div>
+      } @else {
+        <span class="field-hint">At least 6 characters.</span>
+      }
+    </div>
 
-      <div class="form-group app-form-group" [class.has-error]="password?.invalid && password?.touched">
-        <label for="password" class="form-label app-form-label">Password</label>
-        <div class="input-wrapper">
-          <input
-            id="password"
-            [type]="showPassword ? 'text' : 'password'"
-            formControlName="password"
-            class="form-input app-form-control"
-            placeholder="Create a password"
-            [class.error]="password?.invalid && password?.touched"
-          />
-          <button
-            type="button"
-            class="password-toggle"
-            (click)="togglePassword()"
-            tabindex="-1"
-          >
-            {{ showPassword ? '👁' : '👁‍🗨' }}
-          </button>
-        </div>
-        <span class="error-message" *ngIf="password?.invalid && password?.touched">
-          <span *ngIf="password?.errors?.['required']">Password is required</span>
-          <span *ngIf="password?.errors?.['minlength']">Password must be at least 6 characters</span>
+    <div class="field">
+      <label for="confirmPassword" class="field-label">Confirm password</label>
+      <input id="confirmPassword" [type]="showPassword() ? 'text' : 'password'" formControlName="confirmPassword" class="input"
+             autocomplete="new-password" [class.is-invalid]="confirmPassword?.touched && (confirmPassword?.invalid || registerForm.errors?.['passwordMismatch'])"/>
+      @if (confirmPassword?.touched && (confirmPassword?.invalid || registerForm.errors?.['passwordMismatch'])) {
+        <span class="field-error">
+          @if (confirmPassword?.errors?.['required']) { Repeat your password. } @else { Passwords don't match. }
         </span>
+      }
+    </div>
+
+    @if (errorMessage()) {
+      <div class="auth-error" role="alert">
+        <app-icon name="alert" [size]="16"/>
+        <span>{{ errorMessage() }}</span>
       </div>
+    }
 
-      <div class="form-group app-form-group" [class.has-error]="confirmPassword?.invalid && confirmPassword?.touched">
-        <label for="confirmPassword" class="form-label app-form-label">Confirm Password</label>
-        <div class="input-wrapper">
-          <input
-            id="confirmPassword"
-            [type]="showConfirmPassword ? 'text' : 'password'"
-            formControlName="confirmPassword"
-            class="form-input app-form-control"
-            placeholder="Confirm your password"
-            [class.error]="confirmPassword?.invalid && confirmPassword?.touched"
-          />
-          <button
-            type="button"
-            class="password-toggle"
-            (click)="toggleConfirmPassword()"
-            tabindex="-1"
-          >
-            {{ showConfirmPassword ? '👁' : '👁‍🗨' }}
-          </button>
-        </div>
-        <span class="error-message" *ngIf="confirmPassword?.invalid && confirmPassword?.touched">
-          <span *ngIf="confirmPassword?.errors?.['required']">Please confirm your password</span>
-          <span *ngIf="confirmPassword?.errors?.['passwordMismatch']">Passwords don't match</span>
-        </span>
-      </div>
+    <button type="submit" class="btn btn-primary btn-block auth-submit" [disabled]="isLoading()">
+      @if (isLoading()) {
+        <span class="spinner" aria-hidden="true"></span>
+        <span class="visually-hidden">Creating account…</span>
+      } @else {
+        Create account
+      }
+    </button>
+  </form>
 
-      <div class="error-alert" *ngIf="errorMessage">
-        <span class="alert-icon">⚠</span>
-        {{ errorMessage }}
-      </div>
-
-      <button
-        type="submit"
-        class="submit-btn app-modal-btn app-modal-btn-primary"
-        [disabled]="registerForm.invalid || isLoading"
-        [class.loading]="isLoading"
-      >
-        @if (isLoading) {
-          <span class="loader"></span>
-        }
-        @else {
-          <span>Create Account</span>
-        }
-      </button>
-
-      <div class="auth-footer">
-        <p class="footer-text">
-          Already have an account?
-          <a routerLink="/auth/login" class="auth-link">Sign in</a>
-        </p>
-      </div>
-    </form>
-  </div>
-
+  <p class="auth-footer">
+    Already have an account? <a routerLink="/auth/login">Sign in</a>
+  </p>
 </div>

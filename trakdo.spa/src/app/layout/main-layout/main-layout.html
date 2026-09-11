@@ -1,147 +1,130 @@
-<div class="layout-container">
-  <!-- Notifications -->
-  <app-notifications></app-notifications>
+<app-notifications/>
 
-  <!-- Sidebar -->
-  <aside class="sidebar" [class.collapsed]="isSidebarCollapsed" [class.mobile-open]="isMobileMenuOpen">
-    <div class="sidebar-header">
-      <div class="logo-container">
-        <img class="logo-img" src="/assets/icon-small.png" alt="logo"/>
-        <h1 class="logo-text" *ngIf="!isSidebarCollapsed">TrakDo</h1>
-      </div>
-      <button class="collapse-btn" (click)="toggleSidebar()" *ngIf="!isMobileMenuOpen">
-        <span *ngIf="!isSidebarCollapsed">◀</span>
-        <span *ngIf="isSidebarCollapsed">▶</span>
-      </button>
-    </div>
-    <nav class="sidebar-nav">
-      <div class="nav-section workspace-section">
-        @if (!isSidebarCollapsed) {
-          <div class="nav-section-title">Board Workspace</div>
-        }
-        @if (!isSidebarCollapsed && boards().length > 0) {
-          <div class="board-selector">
-            <label class="board-selector-label">Board</label>
-            <select class="board-selector-control" [ngModel]="selectedBoardId()" (ngModelChange)="onBoardSelectionChange($event)">
-              @for (board of boards(); track board.id) {
-                <option [ngValue]="board.id">{{ board.name }}</option>
-              }
-            </select>
-          </div>
-        }
+<!-- Mobile top bar -->
+<header class="topbar">
+  <button type="button" class="btn btn-ghost btn-icon" (click)="toggleMobileMenu()" aria-label="Open navigation" [attr.aria-expanded]="isMobileMenuOpen()">
+    <app-icon name="menu" [size]="20"/>
+  </button>
+  <a routerLink="/boards" class="brand">
+    <img class="brand-logo" src="/assets/icon-small.png" alt=""/>
+    <span class="brand-name">TrakDo</span>
+  </a>
+  @if (timers.primary(); as primary) {
+    <a class="topbar-timer" [routerLink]="['/board', primary.boardId, 'tasks']" [title]="primary.taskTitle">
+      <span class="live-dot"></span>
+      <span class="timer-digits">{{ runningClock(primary) }}</span>
+    </a>
+  }
+</header>
 
-        <a
-          [routerLink]="getTasksLink()"
-          class="nav-item"
-          [class.active]="isTasksRoute()"
-          (click)="closeMobileMenu()"
-        >
-          <span class="nav-icon">📋</span>
-          <span class="nav-text" *ngIf="!isSidebarCollapsed">Tasks</span>
-        </a>
-
-        <a
-          [routerLink]="getCalendarLink()"
-          class="nav-item"
-          [class.active]="isCalendarRoute()"
-          (click)="closeMobileMenu()"
-        >
-          <span class="nav-icon">📅</span>
-          <span class="nav-text" *ngIf="!isSidebarCollapsed">Calendar</span>
-        </a>
-
-        <a
-          [routerLink]="getSessionsLink()"
-          class="nav-item"
-          [class.active]="isSessionsRoute()"
-          (click)="closeMobileMenu()"
-        >
-          <span class="nav-icon">⏱️</span>
-          <span class="nav-text" *ngIf="!isSidebarCollapsed">Sessions</span>
-        </a>
-
-        <a
-          [routerLink]="getStatisticsLink()"
-          class="nav-item"
-          [class.active]="isStatisticsRoute()"
-          (click)="closeMobileMenu()"
-        >
-          <span class="nav-icon">📈</span>
-          <span class="nav-text" *ngIf="!isSidebarCollapsed">Statistics</span>
-        </a>
-      </div>
-
-      <div class="nav-section management-section">
-        @if (!isSidebarCollapsed) {
-          <div class="nav-section-title">Management</div>
-        }
-        <a
-          routerLink="/boards"
-          class="nav-item"
-          [class.active]="isBoardsRoute()"
-          (click)="closeMobileMenu()"
-        >
-          <span class="nav-icon">🗂️</span>
-          <span class="nav-text" *ngIf="!isSidebarCollapsed">Board Management</span>
-        </a>
-      </div>
-    </nav>
-
-    <div class="sidebar-footer">
-      <div class="user-profile" *ngIf="authService.currentUser() as user">
-        <div class="user-avatar">
-          {{ user.username.charAt(0).toUpperCase() }}
-        </div>
-        <div class="user-info" *ngIf="!isSidebarCollapsed">
-          <p class="user-name">{{ user.username }}</p>
-        </div>
-      </div>
-      <button class="settings-btn" (click)="goToSettings()" [class.icon-only]="isSidebarCollapsed" title="Settings">
-        <span class="settings-icon">S</span>
-        <span class="settings-text" *ngIf="!isSidebarCollapsed">Settings</span>
-      </button>
-      <button class="logout-btn" (click)="logout()" [class.icon-only]="isSidebarCollapsed">
-        <span class="logout-text" *ngIf="!isSidebarCollapsed">Logout</span>
-      </button>
-    </div>
-  </aside>
-
-  <!-- Mobile Overlay -->
-  <div class="mobile-overlay" *ngIf="isMobileMenuOpen" (click)="closeMobileMenu()"></div>
-
-  <!-- Main Content Area -->
-  <div class="main-content" [class.sidebar-collapsed]="isSidebarCollapsed">
-    <!-- Header -->
-    <!--    <header class="header">-->
-    <!--      <div class="header-left">-->
-    <!--        <button class="mobile-menu-btn" (click)="toggleMobileMenu()">-->
-    <!--          ☰-->
-    <!--        </button>-->
-    <!--        <h2 class="page-title">Welcome back!</h2>-->
-    <!--      </div>-->
-    <!--      <div class="header-right">-->
-    <!--        <div class="header-actions">-->
-    <!--          <button class="header-btn">-->
-    <!--            <span class="notification-icon">🔔</span>-->
-    <!--            <span class="notification-badge">3</span>-->
-    <!--          </button>-->
-    <!--          <button class="header-btn">⚙️</button>-->
-    <!--        </div>-->
-    <!--      </div>-->
-    <!--    </header>-->
-
-    <!-- Page Content -->
-    <main class="content">
-      @if (settingsService.isLoaded()) {
-        <router-outlet></router-outlet>
-      } @else {
-        <div class="empty-state">Loading settings...</div>
-      }
-    </main>
-
-    <!-- Footer -->
-    <footer class="footer">
-      <p>&copy; 2026 TrakDo. All rights reserved.</p>
-    </footer>
+<aside class="sidebar" [class.collapsed]="isSidebarCollapsed()" [class.mobile-open]="isMobileMenuOpen()">
+  <div class="sidebar-brand">
+    <a routerLink="/boards" class="brand" [title]="isSidebarCollapsed() ? 'TrakDo' : ''">
+      <img class="brand-logo" src="/assets/icon-small.png" alt=""/>
+      <span class="brand-name">TrakDo</span>
+    </a>
+    <button type="button" class="btn btn-ghost btn-icon btn-sm collapse-btn" (click)="toggleSidebar()"
+            [attr.aria-label]="isSidebarCollapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+            [title]="isSidebarCollapsed() ? 'Expand sidebar' : 'Collapse sidebar'">
+      <app-icon name="panel-left"/>
+    </button>
+    <button type="button" class="btn btn-ghost btn-icon btn-sm close-drawer-btn" (click)="closeMobileMenu()" aria-label="Close navigation">
+      <app-icon name="x"/>
+    </button>
   </div>
+
+  @if (boards().length > 0) {
+    <div class="board-switcher">
+      @if (isSidebarCollapsed()) {
+        <a class="board-initial" [routerLink]="linkFor('tasks')" [title]="selectedBoard()?.name ?? ''"
+           [style.background]="selectedBoard()?.color || '#09C1BF'">
+          {{ (selectedBoard()?.name ?? '?').charAt(0).toUpperCase() }}
+        </a>
+      } @else {
+        <label class="switcher-label" for="board-switcher">Board</label>
+        <div class="switcher-control">
+          <span class="switcher-dot" [style.background]="selectedBoard()?.color || '#09C1BF'"></span>
+          <select id="board-switcher" [ngModel]="selectedBoardId()" (ngModelChange)="onBoardSelectionChange($event)">
+            @for (board of boards(); track board.id) {
+              <option [ngValue]="board.id">{{ board.name }}</option>
+            }
+          </select>
+          <app-icon class="switcher-caret" name="chevron-down" [size]="16"/>
+        </div>
+      }
+    </div>
+  }
+
+  <nav class="sidebar-nav" aria-label="Main">
+    @if (boards().length > 0) {
+      @for (item of boardNavItems; track item.section) {
+        <a class="nav-item" [routerLink]="linkFor(item.section)" [class.active]="activeSection() === item.section"
+           [attr.aria-current]="activeSection() === item.section ? 'page' : null"
+           [title]="isSidebarCollapsed() ? item.label : ''">
+          <app-icon [name]="item.icon"/>
+          <span class="nav-text">{{ item.label }}</span>
+        </a>
+      }
+      <div class="nav-divider"></div>
+    }
+
+    <a class="nav-item" routerLink="/boards" [class.active]="isBoardsRoute()" [attr.aria-current]="isBoardsRoute() ? 'page' : null"
+       [title]="isSidebarCollapsed() ? 'All boards' : ''">
+      <app-icon name="grid"/>
+      <span class="nav-text">All boards</span>
+    </a>
+    <a class="nav-item" routerLink="/settings" [class.active]="isSettingsRoute()" [attr.aria-current]="isSettingsRoute() ? 'page' : null"
+       [title]="isSidebarCollapsed() ? 'Settings' : ''">
+      <app-icon name="settings"/>
+      <span class="nav-text">Settings</span>
+    </a>
+  </nav>
+
+  @if (timers.running().length > 0) {
+    <div class="running-block">
+      <div class="running-label">Running now</div>
+      @for (session of timers.running(); track session.id) {
+        <a class="running-item" [routerLink]="['/board', session.boardId, 'tasks']" [title]="session.taskTitle + ' · ' + runningClock(session)">
+          <span class="live-dot"></span>
+          <span class="running-title">{{ session.taskTitle }}</span>
+          <span class="running-time timer-digits">{{ runningClock(session) }}</span>
+        </a>
+      }
+    </div>
+  }
+
+  <div class="sidebar-footer">
+    @if (authService.currentUser(); as user) {
+      <div class="user-avatar" [title]="user.username">{{ user.username.charAt(0).toUpperCase() }}</div>
+      <span class="user-name">{{ user.username }}</span>
+    }
+    <button type="button" class="btn btn-ghost btn-icon btn-sm logout-btn" (click)="logout()" aria-label="Log out" title="Log out">
+      <app-icon name="logout"/>
+    </button>
+  </div>
+</aside>
+
+@if (isMobileMenuOpen()) {
+  <div class="mobile-overlay" (click)="closeMobileMenu()"></div>
+}
+
+<div class="main" [class.sidebar-collapsed]="isSidebarCollapsed()">
+  <main class="content">
+    @if (settingsService.isLoaded()) {
+      <router-outlet/>
+    } @else if (settingsLoadFailed()) {
+      <div class="empty-state">
+        <span class="empty-state-icon"><app-icon name="alert" [size]="22"/></span>
+        <h2>Couldn't load your settings</h2>
+        <p>Check your connection and try again.</p>
+        <button type="button" class="btn btn-primary" (click)="retrySettings()">Retry</button>
+      </div>
+    } @else {
+      <div class="loading-shell" aria-busy="true" aria-label="Loading">
+        <div class="skeleton" style="height: 2.2rem; width: 40%"></div>
+        <div class="skeleton" style="height: 1rem; width: 25%"></div>
+        <div class="skeleton" style="height: 50vh; margin-top: 1rem"></div>
+      </div>
+    }
+  </main>
 </div>

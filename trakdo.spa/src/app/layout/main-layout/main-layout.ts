@@ -1,42 +1,72 @@
-import { Component, OnInit, effect, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, DestroyRef, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {FormsModule} from '@angular/forms';
+import {filter} from 'rxjs';
 import {AuthService} from '../../core/services/auth.service';
 import {Notifications} from '../../features/notifications/notifications';
 import {BoardService} from '../../core/services/board.service';
-import {filter} from 'rxjs';
 import {BoardSelectionService} from '../../core/services/board-selection.service';
 import {SettingsService} from '../../core/services/settings.service';
+import {RunningSession, RunningTimerService} from '../../core/services/running-timer.service';
+import {Icon, IconName} from '../../shared/icon/icon';
+import {formatClock} from '../../core/utils/duration';
+
+type BoardSection = 'tasks' | 'calendar' | 'sessions' | 'statistics';
+
+interface BoardNavItem {
+  section: BoardSection;
+  label: string;
+  icon: IconName;
+}
+
+const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed';
+const SCOPED_ROUTE = /^\/board\/(\d+)\/(tasks|calendar|sessions|statistics)\/?(?:[?#].*)?$/;
 
 @Component({
   selector: 'app-main-layout',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, FormsModule, Notifications],
+  imports: [RouterOutlet, RouterLink, FormsModule, Notifications, Icon],
   templateUrl: './main-layout.html',
   styleUrl: './main-layout.css'
 })
-export class MainLayout implements OnInit {
-  isSidebarCollapsed = false;
-  isMobileMenuOpen = false;
+export class MainLayout implements OnInit, OnDestroy {
+  authService = inject(AuthService);
+  settingsService = inject(SettingsService);
+  timers = inject(RunningTimerService);
+  private router = inject(Router);
+  private boardService = inject(BoardService);
+  private boardSelectionService = inject(BoardSelectionService);
+  private destroyRef = inject(DestroyRef);
+
+  readonly boardNavItems: BoardNavItem[] = [
+    { section: 'tasks', label: 'Tasks', icon: 'kanban' },
+    { section: 'calendar', label: 'Calendar', icon: 'calendar' },
+    { section: 'sessions', label: 'Sessions', icon: 'clock' },
+    { section: 'statistics', label: 'Statistics', icon: 'chart' }
+  ];
+
+  isSidebarCollapsed = signal(this.readCollapsedPreference());
+  isMobileMenuOpen = signal(false);
+  settingsLoadFailed = signal(false);
   boards = signal<Board[]>([]);
   selectedBoardId = signal<number | null>(null);
+  private currentUrl = signal(this.router.url);
 
-  constructor(
-    public authService: AuthService,
-    private router: Router,
-    private boardService: BoardService,
-    private boardSelectionService: BoardSelectionService,
-    public settingsService: SettingsService
-  ) {
+  selectedBoard = computed(() => this.boards().find(board => board.id === this.selectedBoardId()) ?? null);
+  activeSection = computed(() => this.getScopedRouteType(this.currentUrl()));
+  isBoardsRoute = computed(() => /^\/boards\/?(?:[?#].*)?$/.test(this.currentUrl()));
+  isSettingsRoute = computed(() => this.currentUrl().startsWith('/settings'));
+
+  constructor() {
     effect(() => {
-      if (this.authService.currentUser()) {
-        this.loadBoards();
-      }
+      this.selectedBoardId.set(this.boardSelectionService.selectedBoardId());
     });
 
     effect(() => {
-      this.selectedBoardId.set(this.boardSelectionService.selectedBoardId());
+      if (this.settingsService.isLoaded()) {
+        this.timers.refresh();
+      }
     });
   }
 
@@ -46,13 +76,28 @@ export class MainLayout implements OnInit {
     this.loadBoards();
 
     this.router.events
-      .pipe(filter(event => event instanceof NavigationEnd))
+      .pipe(filter(event => event instanceof NavigationEnd), takeUntilDestroyed(this.destroyRef))
       .subscribe(event => {
-        const navigationEnd = event as NavigationEnd;
+        const url = (event as NavigationEnd).urlAfterRedirects;
+        this.currentUrl.set(url);
+        this.isMobileMenuOpen.set(false);
         this.ensureSettingsLoaded();
-        this.syncSelectedBoardFromUrl(navigationEnd.urlAfterRedirects);
+        this.syncSelectedBoardFromUrl(url);
         this.loadBoards();
       });
+
+    this.boardService.boardsChanged$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.loadBoards());
+  }
+
+  ngOnDestroy(): void {
+    this.timers.clear();
+  }
+
+  retrySettings(): void {
+    this.settingsLoadFailed.set(false);
+    this.ensureSettingsLoaded();
   }
 
   private ensureSettingsLoaded(): void {
@@ -61,7 +106,11 @@ export class MainLayout implements OnInit {
     }
 
     this.settingsService.loadSettings().subscribe({
-      error: err => console.error('Failed to load settings in layout', err)
+      next: () => this.settingsLoadFailed.set(false),
+      error: err => {
+        console.error('Failed to load settings in layout', err);
+        this.settingsLoadFailed.set(true);
+      }
     });
   }
 
@@ -72,12 +121,13 @@ export class MainLayout implements OnInit {
 
     this.boardService.getBoards().subscribe({
       next: boards => {
-        this.boards.set(boards);
+        const sortedBoards = [...boards].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+        this.boards.set(sortedBoards);
 
-        if (boards.length === 0) {
+        if (sortedBoards.length === 0) {
           this.selectedBoardId.set(null);
           this.boardSelectionService.setSelectedBoard(null);
-          if (this.isTasksRoute() || this.isCalendarRoute() || this.isSessionsRoute() || this.isStatisticsRoute()) {
+          if (this.activeSection() !== null) {
             this.router.navigate(['/boards']);
           }
           return;
@@ -85,7 +135,7 @@ export class MainLayout implements OnInit {
 
         const boardIdInRoute = this.getBoardIdFromScopedRoute(this.router.url);
         if (boardIdInRoute !== null) {
-          const boardFromRoute = boards.find(board => board.id === boardIdInRoute);
+          const boardFromRoute = sortedBoards.find(board => board.id === boardIdInRoute);
           if (!boardFromRoute) {
             this.router.navigate(['/boards']);
             return;
@@ -97,8 +147,8 @@ export class MainLayout implements OnInit {
         }
 
         const currentSelectedId = this.boardSelectionService.selectedBoardId();
-        const matchingBoard = boards.find(board => board.id === currentSelectedId);
-        const selectedBoardId = matchingBoard?.id ?? boards[0].id;
+        const matchingBoard = sortedBoards.find(board => board.id === currentSelectedId);
+        const selectedBoardId = matchingBoard?.id ?? sortedBoards[0].id;
         this.selectedBoardId.set(selectedBoardId);
         this.boardSelectionService.setSelectedBoard(selectedBoardId);
       },
@@ -124,63 +174,21 @@ export class MainLayout implements OnInit {
 
     this.selectedBoardId.set(parsedBoardId);
     this.boardSelectionService.setSelectedBoard(parsedBoardId);
-    if (this.isTasksRoute()) {
-      this.router.navigate(['/board', parsedBoardId, 'tasks']);
-    }
-    if (this.isCalendarRoute()) {
-      this.router.navigate(['/board', parsedBoardId, 'calendar']);
-    }
-    if (this.isSessionsRoute()) {
-      this.router.navigate(['/board', parsedBoardId, 'sessions']);
-    }
-    if (this.isStatisticsRoute()) {
-      this.router.navigate(['/board', parsedBoardId, 'statistics']);
-    }
-    this.closeMobileMenu();
+    // Stay on the same section when switching boards; from other pages jump to the board's tasks.
+    this.router.navigate(['/board', parsedBoardId, this.activeSection() ?? 'tasks']);
   }
 
-  getTasksLink(): (string | number)[] {
+  linkFor(section: BoardSection): (string | number)[] {
     const selectedBoardId = this.selectedBoardId() ?? this.boards()[0]?.id;
-    return selectedBoardId ? ['/board', selectedBoardId, 'tasks'] : ['/boards'];
+    return selectedBoardId ? ['/board', selectedBoardId, section] : ['/boards'];
   }
 
-  getCalendarLink(): (string | number)[] {
-    const selectedBoardId = this.selectedBoardId() ?? this.boards()[0]?.id;
-    return selectedBoardId ? ['/board', selectedBoardId, 'calendar'] : ['/boards'];
-  }
-
-  getSessionsLink(): (string | number)[] {
-    const selectedBoardId = this.selectedBoardId() ?? this.boards()[0]?.id;
-    return selectedBoardId ? ['/board', selectedBoardId, 'sessions'] : ['/boards'];
-  }
-
-  getStatisticsLink(): (string | number)[] {
-    const selectedBoardId = this.selectedBoardId() ?? this.boards()[0]?.id;
-    return selectedBoardId ? ['/board', selectedBoardId, 'statistics'] : ['/boards'];
-  }
-
-  isBoardsRoute(): boolean {
-    return this.router.url === '/boards' || this.router.url.startsWith('/boards?');
-  }
-
-  isTasksRoute(): boolean {
-    return this.getScopedRouteType(this.router.url) === 'tasks';
-  }
-
-  isCalendarRoute(): boolean {
-    return this.getScopedRouteType(this.router.url) === 'calendar';
-  }
-
-  isSessionsRoute(): boolean {
-    return this.getScopedRouteType(this.router.url) === 'sessions';
-  }
-
-  isStatisticsRoute(): boolean {
-    return this.getScopedRouteType(this.router.url) === 'statistics';
+  runningClock(session: RunningSession): string {
+    return formatClock(this.timers.elapsedSeconds(session));
   }
 
   private getBoardIdFromScopedRoute(url: string): number | null {
-    const match = url.match(/^\/board\/(\d+)\/(tasks|calendar|sessions|statistics)\/?(?:[?#].*)?$/);
+    const match = url.match(SCOPED_ROUTE);
     if (!match) {
       return null;
     }
@@ -189,33 +197,31 @@ export class MainLayout implements OnInit {
     return Number.isNaN(boardId) ? null : boardId;
   }
 
-  private getScopedRouteType(url: string): 'tasks' | 'calendar' | 'sessions' | 'statistics' | null {
-    const match = url.match(/^\/board\/\d+\/(tasks|calendar|sessions|statistics)\/?(?:[?#].*)?$/);
-    if (!match) {
-      return null;
-    }
-
-    return match[1] as 'tasks' | 'calendar' | 'sessions' | 'statistics';
+  private getScopedRouteType(url: string): BoardSection | null {
+    const match = url.match(SCOPED_ROUTE);
+    return match ? match[2] as BoardSection : null;
   }
 
   toggleSidebar(): void {
-    this.isSidebarCollapsed = !this.isSidebarCollapsed;
+    const collapsed = !this.isSidebarCollapsed();
+    this.isSidebarCollapsed.set(collapsed);
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
   }
 
   toggleMobileMenu(): void {
-    this.isMobileMenuOpen = !this.isMobileMenuOpen;
+    this.isMobileMenuOpen.update(open => !open);
   }
 
   closeMobileMenu(): void {
-    this.isMobileMenuOpen = false;
+    this.isMobileMenuOpen.set(false);
   }
 
   logout(): void {
+    this.timers.clear();
     this.authService.logout();
   }
 
-  goToSettings(): void {
-    this.router.navigate(['/settings']);
-    this.closeMobileMenu();
+  private readCollapsedPreference(): boolean {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
   }
 }

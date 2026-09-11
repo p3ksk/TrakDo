@@ -1,10 +1,11 @@
-interface  Session {
+interface Session {
   id: number;
   taskId?: number;
   taskTitle?: string;
-  startTime: Date;
-  endTime?: Date;
-  duration: number; // in seconds
+  boardId?: number;
+  startTime: Date | string;
+  endTime?: Date | string;
+  duration: number; // in seconds; missing while the session is running
   notes?: string;
   color?: string;
 }

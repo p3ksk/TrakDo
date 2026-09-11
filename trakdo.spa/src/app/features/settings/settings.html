@@ -1,55 +1,90 @@
-<div class="settings-container">
-  <div class="settings-header">
-    <h1>Settings</h1>
-    <p>Manage your timezone, date/time format, and work hours.</p>
-  </div>
+<div class="settings">
+  <app-page-header eyebrow="Account" title="Settings" subtitle="Timezone, formats and working hours used across TrakDo."/>
 
-  <div class="settings-form" *ngIf="isLoading">Loading settings...</div>
-
-  <form class="settings-form" *ngIf="!isLoading">
-    <div class="form-group app-form-group">
-      <label class="app-form-label" for="timezone">Timezone</label>
-      <select class="app-form-control" id="timezone" name="timezone" [(ngModel)]="settingsForm.timezone">
-        <option *ngFor="let timezone of timezoneOptions" [value]="timezone">{{ timezone }}</option>
-      </select>
-    </div>
-
-    <div class="form-group app-form-group">
-      <label class="app-form-label" for="dateFormat">Date format</label>
-      <select class="app-form-control" id="dateFormat" name="dateFormat" [(ngModel)]="settingsForm.dateFormat">
-        <option *ngFor="let dateFormat of dateFormatOptions" [value]="dateFormat">{{ dateFormat }}</option>
-      </select>
-    </div>
-
-    <div class="form-group app-form-group">
-      <label class="app-form-label" for="use24HourTime">Time format</label>
-      <select class="app-form-control" id="use24HourTime" name="use24HourTime" [(ngModel)]="settingsForm.use24HourTime">
-        <option [ngValue]="true">24-hour</option>
-        <option [ngValue]="false">12-hour</option>
-      </select>
-    </div>
-
-    <div class="form-row app-form-row">
-      <div class="form-group app-form-group">
-        <label class="app-form-label" for="workDayStartHour">Work day start</label>
-        <select class="app-form-control" id="workDayStartHour" name="workDayStartHour" [(ngModel)]="settingsForm.workDayStartHour">
-          <option *ngFor="let hour of hourStartOptions" [ngValue]="hour">{{ hour.toString().padStart(2, '0') }}:00</option>
-        </select>
+  <form class="settings-form" (ngSubmit)="saveSettings()">
+    <section class="panel settings-section">
+      <div class="section-intro">
+        <h2>Region &amp; format</h2>
+        <p>Every time you see in the app is shown in this timezone.</p>
       </div>
 
-      <div class="form-group app-form-group">
-        <label class="app-form-label" for="workDayEndHour">Work day end</label>
-        <select class="app-form-control" id="workDayEndHour" name="workDayEndHour" [(ngModel)]="settingsForm.workDayEndHour">
-          <option *ngFor="let hour of hourEndOptions" [ngValue]="hour">
-            {{ hour === 24 ? '24:00' : hour.toString().padStart(2, '0') + ':00' }}
-          </option>
-        </select>
+      <div class="section-fields">
+        <div class="field">
+          <label class="field-label" for="timezone">Timezone</label>
+          <select class="input" id="timezone" name="timezone" [ngModel]="form().timezone" (ngModelChange)="update('timezone', $event)">
+            @for (timezone of timezoneOptions; track timezone) {
+              <option [value]="timezone">{{ timezone }}</option>
+            }
+          </select>
+          @if (browserTimezone && form().timezone !== browserTimezone) {
+            <button type="button" class="link-btn" (click)="useBrowserTimezone()">Use my current timezone ({{ browserTimezone }})</button>
+          }
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label class="field-label" for="dateFormat">Date format</label>
+            <select class="input" id="dateFormat" name="dateFormat" [ngModel]="form().dateFormat" (ngModelChange)="update('dateFormat', $event)">
+              @for (dateFormat of dateFormatOptions; track dateFormat) {
+                <option [value]="dateFormat">{{ dateFormat }}</option>
+              }
+            </select>
+            <span class="field-hint">Today: {{ datePreview() }}</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="use24HourTime">Time format</label>
+            <select class="input" id="use24HourTime" name="use24HourTime" [ngModel]="form().use24HourTime" (ngModelChange)="update('use24HourTime', $event)">
+              <option [ngValue]="true">24-hour</option>
+              <option [ngValue]="false">12-hour</option>
+            </select>
+            <span class="field-hint">Now: {{ timePreview() }}</span>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
+
+    <section class="panel settings-section">
+      <div class="section-intro">
+        <h2>Working hours</h2>
+        <p>The calendar's week view opens on these hours. Sessions outside them still show up.</p>
+      </div>
+
+      <div class="section-fields">
+        <div class="field-row">
+          <div class="field">
+            <label class="field-label" for="workDayStartHour">Day starts</label>
+            <select class="input" id="workDayStartHour" name="workDayStartHour" [class.is-invalid]="!!hoursError()"
+                    [ngModel]="form().workDayStartHour" (ngModelChange)="update('workDayStartHour', $event)">
+              @for (hour of hourStartOptions; track hour) {
+                <option [ngValue]="hour">{{ formatHour(hour) }}</option>
+              }
+            </select>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="workDayEndHour">Day ends</label>
+            <select class="input" id="workDayEndHour" name="workDayEndHour" [class.is-invalid]="!!hoursError()"
+                    [ngModel]="form().workDayEndHour" (ngModelChange)="update('workDayEndHour', $event)">
+              @for (hour of hourEndOptions; track hour) {
+                <option [ngValue]="hour">{{ formatHour(hour) }}</option>
+              }
+            </select>
+          </div>
+        </div>
+        @if (hoursError(); as error) {
+          <span class="field-error">{{ error }}</span>
+        }
+      </div>
+    </section>
 
     <div class="form-actions">
-      <button class="app-modal-btn app-modal-btn-primary" type="button" (click)="saveSettings()" [disabled]="isSaving">
-        Save settings
+      @if (isDirty()) {
+        <span class="unsaved">Unsaved changes</span>
+        <button type="button" class="btn btn-ghost" (click)="reset()">Discard</button>
+      }
+      <button class="btn btn-primary" type="submit" [disabled]="!isDirty() || !!hoursError() || isSaving()">
+        {{ isSaving() ? 'Saving…' : 'Save settings' }}
       </button>
     </div>
   </form>

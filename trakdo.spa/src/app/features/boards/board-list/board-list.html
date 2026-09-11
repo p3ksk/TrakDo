@@ -1,156 +1,105 @@
-<div class="boards-container">
-  <!-- Header Section -->
-  <div class="boards-header">
-    <div class="header-content app-board-page-header">
-      <div class="title-section app-board-header-left">
-        <h1 class="app-board-title">My Boards</h1>
-        <p class="subtitle app-board-description">Manage and organize your project boards</p>
-      </div>
-      <div class="app-board-header-right">
-        <button class="btn-create" (click)="openCreateModal()">
-          <span class="btn-icon">➕</span>
-          <span>Create Board</span>
-        </button>
-      </div>
-    </div>
+<app-page-header eyebrow="Workspace" title="Boards" [subtitle]="subtitle()">
+  @if (boards().length >= searchThreshold) {
+    <label class="search">
+      <app-icon name="search" [size]="16"/>
+      <span class="visually-hidden">Search boards</span>
+      <input type="search" class="input" placeholder="Search boards" [ngModel]="searchQuery()" (ngModelChange)="searchQuery.set($event)"/>
+    </label>
+  }
+  <button type="button" class="btn btn-primary" (click)="openCreate()">
+    <app-icon name="plus" [size]="16"/> New board
+  </button>
+</app-page-header>
 
-    <!-- Search Bar -->
-    <div class="search-container">
-      <span class="search-icon">🔍</span>
-      <input
-        type="text"
-        class="search-input"
-        placeholder="Search boards..."
-        [(ngModel)]="searchQuery"
-        (input)="searchBoards()"
-      />
-    </div>
+@if (isLoading()) {
+  <div class="board-grid">
+    @for (placeholder of [1, 2, 3]; track placeholder) {
+      <div class="skeleton" style="height: 148px"></div>
+    }
   </div>
-
-  <!-- Stats Summary -->
-  <div class="stats-summary">
-    <div class="stat-item">
-      <span class="stat-value">{{ boards().length }}</span>
-      <span class="stat-label">Total Boards</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-label">Total Tasks</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-value">{{ filteredBoards().length }}</span>
-      <span class="stat-label">Showing</span>
-    </div>
-  </div>
-
-  <!-- Boards Grid -->
-  <div class="boards-grid" *ngIf="filteredBoards().length > 0">
-    <div class="board-card" *ngFor="let board of filteredBoards()">
-      <div class="board-color-bar" [style.background]="board.color"></div>
-
-      <div class="board-content">
-        <div class="board-header">
-          <h3 class="board-title">{{ board.name }}</h3>
-          <div class="board-actions">
-            <button class="action-btn" title="Edit">✏️</button>
-            <button class="action-btn delete" (click)="deleteBoard(board.id)" title="Delete">🗑️</button>
-          </div>
-        </div>
-
-        <p class="board-description">{{ board.description }}</p>
-
-        <div class="board-stats">
-          <div class="stat-badge">
-            <span class="badge-icon">📝</span>
-            <span>{{ board.tasksCount }} tasks</span>
-          </div>
-          <div class="stat-badge">
-            <span class="badge-icon">👥</span>
-            <span>N/A members</span>
-          </div>
-        </div>
-
-        <div class="board-footer">
-          <span class="board-date" *ngIf="board.updatedAt">Updated {{ getRelativeTime(board.updatedAt) }}</span>
-          <a [routerLink]="['/board', board.id, 'tasks']" class="view-btn">
-            Open Board →
-          </a>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Empty State -->
-  <div class="empty-state" *ngIf="filteredBoards().length === 0 && boards().length > 0">
-    <div class="empty-icon">🔍</div>
-    <h3>No boards found</h3>
-    <p>Try adjusting your search query</p>
-  </div>
-
-  <div class="empty-state" *ngIf="boards().length === 0">
-    <div class="empty-icon">📋</div>
-    <h3>No boards yet</h3>
-    <p>Create your first board to get started</p>
-    <button class="btn-create" (click)="openCreateModal()">
-      <span class="btn-icon">➕</span>
-      <span>Create Your First Board</span>
+} @else if (boards().length === 0) {
+  <div class="panel empty-state">
+    <span class="empty-state-icon"><app-icon name="kanban" [size]="22"/></span>
+    <h2>Create your first board</h2>
+    <p>Boards hold your tasks. Start a timer on any task to track time — it shows up in Calendar, Sessions and Statistics.</p>
+    <button type="button" class="btn btn-primary" (click)="openCreate()">
+      <app-icon name="plus" [size]="16"/> New board
     </button>
   </div>
-</div>
-
-<!-- Create Board Modal -->
-<div class="modal-overlay app-modal-overlay" *ngIf="showCreateModal" (click)="closeCreateModal()">
-  <div class="modal-content app-modal-content" (click)="$event.stopPropagation()">
-    <div class="modal-header app-modal-header">
-      <h2>Create New Board</h2>
-      <button class="close-btn app-close-btn" (click)="closeCreateModal()">✕</button>
-    </div>
-
-    <form (ngSubmit)="createBoard()" class="modal-form app-modal-form">
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Board Name</label>
-        <input
-          type="text"
-          class="form-control app-form-control"
-          placeholder="e.g., Website Redesign"
-          [(ngModel)]="newBoard.name"
-          name="name"
-          required
-        />
-      </div>
-
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Description</label>
-        <textarea
-          class="form-control app-form-control"
-          placeholder="What is this board about?"
-          [(ngModel)]="newBoard.description"
-          name="description"
-          rows="3"
-        ></textarea>
-      </div>
-
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Board Color</label>
-        <div class="color-picker">
-          <div
-            *ngFor="let color of colorOptions"
-            class="color-option"
-            [class.selected]="newBoard.color === color.value"
-            [style.background]="color.value"
-            (click)="newBoard.color = color.value"
-            [title]="color.label"
-          ></div>
+} @else if (filteredBoards().length === 0) {
+  <div class="empty-state">
+    <h3>No boards match "{{ searchQuery() }}"</h3>
+    <button type="button" class="btn btn-secondary btn-sm" (click)="searchQuery.set('')">Clear search</button>
+  </div>
+} @else {
+  <div class="board-grid">
+    @for (board of filteredBoards(); track board.id) {
+      <article class="board-card" [style.--board-color]="board.color || '#09C1BF'">
+        <div class="board-card-top">
+          <span class="board-swatch" aria-hidden="true">{{ board.name.charAt(0).toUpperCase() }}</span>
+          <h2 class="board-card-title">
+            <a class="board-card-link" [routerLink]="['/board', board.id, 'tasks']">{{ board.name }}</a>
+          </h2>
+          <div class="board-card-actions">
+            <button type="button" class="btn btn-ghost btn-icon btn-sm" (click)="openEdit(board)" [attr.aria-label]="'Edit ' + board.name" title="Edit board">
+              <app-icon name="pencil" [size]="15"/>
+            </button>
+            <button type="button" class="btn btn-ghost btn-icon btn-sm danger" (click)="deleteBoard(board)" [attr.aria-label]="'Delete ' + board.name" title="Delete board">
+              <app-icon name="trash" [size]="15"/>
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div class="modal-actions app-modal-actions">
-        <button type="button" class="app-modal-btn app-modal-btn-secondary" (click)="closeCreateModal()">
-          Cancel
-        </button>
-        <button type="submit" class="app-modal-btn app-modal-btn-primary" [disabled]="!newBoard.name.trim()">
-          Create Board
+        <p class="board-card-desc" [class.is-empty]="!board.description">{{ board.description || 'No description' }}</p>
+
+        <div class="board-card-foot">
+          <span>Created {{ formatCreated(board) }}</span>
+          <span class="open-hint">Open <app-icon name="chevron-right" [size]="14"/></span>
+        </div>
+      </article>
+    }
+
+    <button type="button" class="new-board-tile" (click)="openCreate()">
+      <app-icon name="plus" [size]="18"/> New board
+    </button>
+  </div>
+}
+
+@if (boardForm(); as form) {
+  <app-modal [title]="form.board ? 'Edit board' : 'New board'" (closed)="closeForm()">
+    <form (ngSubmit)="saveBoard()">
+      <div class="modal-body">
+        <div class="field">
+          <label class="field-label" for="board-name">Name</label>
+          <input id="board-name" type="text" class="input" placeholder="e.g. Website Redesign" [(ngModel)]="form.name" name="name" maxlength="200" required autocomplete="off"/>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="board-description">Description <span class="optional">optional</span></label>
+          <textarea id="board-description" class="input" placeholder="What is this board about?" [(ngModel)]="form.description" name="description" rows="3" maxlength="2000"></textarea>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Color</span>
+          <div class="color-swatches" role="radiogroup" aria-label="Board color">
+            @for (color of colorOptions; track color.value) {
+              <button type="button" class="color-swatch" role="radio" [attr.aria-checked]="form.color === color.value"
+                      [class.is-selected]="form.color === color.value" [style.background]="color.value"
+                      [attr.aria-label]="color.label" [title]="color.label" (click)="form.color = color.value"></button>
+            }
+          </div>
+        </div>
+
+        @if (!form.board) {
+          <p class="field-hint">New boards start with To Do, In Progress and Done columns.</p>
+        }
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" (click)="closeForm()">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="!form.name.trim() || isSaving()">
+          {{ form.board ? 'Save changes' : 'Create board' }}
         </button>
       </div>
     </form>
-  </div>
-</div>
+  </app-modal>
+}

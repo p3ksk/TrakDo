@@ -1,474 +1,309 @@
-<div class="board-detail-container" *ngIf="board; else noBoardState">
-  <!-- Board Header -->
-  <div class="board-header app-board-page-header">
-    <div class="header-left app-board-header-left">
-      <div class="board-info app-board-info">
-        <div class="board-color-indicator app-board-color-indicator" [style.background]="board.color"></div>
-        <div>
-          <h1 class="board-title app-board-title">{{ board.name }} - Tasks</h1>
-          <p class="board-description app-board-description">{{ board.description }}</p>
-        </div>
-      </div>
-    </div>
-    <div class="header-right app-board-header-right">
-      <div class="board-stats">
-        <span class="stat">{{ columns.length }} columns</span>
-        <span class="stat-divider">•</span>
-        <span class="stat">{{ getTotalTasks() }} tasks</span>
-      </div>
-      <button class="btn-add-column" (click)="openAddColumnModal()">
-        <span>➕</span>
-        <span>Add Column</span>
+<div class="board-page">
+  @if (board) {
+    <app-page-header eyebrow="Tasks" [title]="board.name" [subtitle]="board.description" [color]="board.color">
+      @if (!isLoading) {
+        <span class="board-summary">
+          {{ pluralize(getTotalTasks(), 'task') }}
+          <span class="dot-sep">·</span>
+          <span class="mono">{{ formatHuman(getBoardTrackedTime()) }}</span> tracked
+        </span>
+      }
+      <button type="button" class="btn btn-secondary" (click)="openCreateColumn()">
+        <app-icon name="plus" [size]="16"/> Add column
       </button>
+    </app-page-header>
+  } @else {
+    <div class="header-skeleton">
+      <div class="skeleton" style="height: 0.8rem; width: 60px"></div>
+      <div class="skeleton" style="height: 2rem; width: 280px; max-width: 70%"></div>
     </div>
-  </div>
+  }
 
-  <!-- Kanban Board -->
-  <div class="kanban-board">
-    <div class="columns-container">
-      <!-- Column -->
-      <div
-        class="column"
-        *ngFor="let column of columns"
-        (dragover)="onDragOver($event)"
-        (drop)="onDrop($event, column)"
-      >
-        <div class="column-header" [style.border-color]="column.color">
-          <div class="column-title-section">
-            <div class="column-color-dot" [style.background]="column.color"></div>
-            <h3 class="column-title">{{ column.name }}</h3>
-            <span class="task-count">{{ column.tasks?.length ?? 0 }}</span>
-          </div>
-          <div class="column-actions">
-            <button class="column-action-btn" (click)="openAddTaskModal(column)" title="Add task">
-              ➕
-            </button>
-            <button class="column-action-btn delete" (click)="deleteColumn(column.id)" title="Delete column">
-              🗑️
-            </button>
-          </div>
-        </div>
-
-        <div class="tasks-container">
-          <!-- Task Card -->
-          <div
-            class="task-card"
-            *ngFor="let task of column.tasks"
-            draggable="true"
-            (dragstart)="onDragStart($event, task, column)"
-            (dragend)="onDragEnd()"
-            (click)="openTaskDetail(task)"
-          >
-            <div class="task-header">
-              <div class="task-title-wrap">
-                <span class="task-color-dot" [style.background]="task.color || '#09C1BF'"></span>
-                <h4 class="task-title">{{ task.title }}</h4>
-              </div>
-              @if (task.priority) {
-              <div class="priority-badge" [style.background]="getPriorityColor(task.priority)">
-                {{ task.priority }}
-              </div>
-              }
-            </div>
-
-            <p class="task-description" *ngIf="task.description">
-              {{ task.description }}
-            </p>
-
-            <!-- Timer Section -->
-            <div class="task-timer-section">
-              <div class="timer-display">
-                <span class="timer-icon">⏱️</span>
-                <span class="timer-value">{{ task.isTimerRunning ? formatDuration(getCurrentElapsedTime(task)) : formatDuration(getTotalTimeSpent(task)) }}</span>
-                <span class="timer-label" *ngIf="!task.isTimerRunning && task.sessions.length > 0">
-                  ({{ task.sessions.length }} sessions)
-                </span>
-                <span class="timer-label running" *ngIf="task.isTimerRunning">
-                  Current Session
-                </span>
-              </div>
-
-              <div class="timer-controls">
-                <button
-                  *ngIf="!task.isTimerRunning"
-                  class="timer-btn start"
-                  (click)="startTimer(task, $event)"
-                  title="Start timer">▶</button>
-                <button
-                  *ngIf="task.isTimerRunning"
-                  class="timer-btn stop"
-                  (click)="stopTimer(task, $event)"
-                  title="Stop timer">⏸</button>
-              </div>
-            </div>
-
-            <div class="task-footer" *ngIf="task.tags">
-              <div class="task-tags" *ngIf="task.tags.length > 0">
-                <span class="tag" *ngFor="let tag of task.tags">{{ tag }}</span>
-              </div>
-
-              <div class="task-meta">
-                @if (task.assignee) {
-                <span class="assignee" *ngIf="task.assignee">
-                  <span class="assignee-avatar">{{ task.assignee.charAt(0) }}</span>
-                  <span class="assignee-name">{{ task.assignee }}</span>
-                </span>
-                }
-                @if (task.dueDate) {
-                <span class="due-date">
-                  📅 {{ formatDate(task.dueDate) }}
-                </span>
-                }
-              </div>
-            </div>
-          </div>
-
-          <!-- Empty Column State -->
-          @if (column.tasks.length === 0) {
-            <div class="empty-column">
-              <p>No tasks yet</p>
-              <button class="btn-add-task-empty" (click)="openAddTaskModal(column)">
-                Add Task
+  <div class="kanban" role="list" aria-label="Columns">
+    @if (isLoading) {
+      @for (placeholder of [1, 2, 3]; track placeholder) {
+        <div class="column column-skeleton"><div class="skeleton" style="height: 100%"></div></div>
+      }
+    } @else {
+      @for (column of columns; track column.id) {
+        <section
+          class="column"
+          role="listitem"
+          [class.is-drop-target]="dragOverColumnId === column.id && draggedFromColumn?.id !== column.id"
+          [attr.aria-label]="column.name"
+          (dragover)="onDragOver($event, column)"
+          (dragleave)="onDragLeave($event, column)"
+          (drop)="onDrop($event, column)"
+        >
+          <header class="column-header">
+            <h2 class="column-title" [title]="column.name">{{ column.name }}</h2>
+            <span class="column-count">{{ column.tasks.length }}</span>
+            <div class="column-actions">
+              <button type="button" class="btn btn-ghost btn-icon btn-sm" (click)="openCreateTask(column)" [attr.aria-label]="'Add task to ' + column.name" title="Add task">
+                <app-icon name="plus" [size]="16"/>
+              </button>
+              <button type="button" class="btn btn-ghost btn-icon btn-sm reveal" (click)="openRenameColumn(column)" [attr.aria-label]="'Rename ' + column.name" title="Rename column">
+                <app-icon name="pencil" [size]="15"/>
+              </button>
+              <button type="button" class="btn btn-ghost btn-icon btn-sm reveal danger-hover" (click)="deleteColumn(column)" [attr.aria-label]="'Delete ' + column.name" title="Delete column">
+                <app-icon name="trash" [size]="15"/>
               </button>
             </div>
+          </header>
+
+          <div class="column-body">
+            @for (task of column.tasks; track task.id) {
+              <article
+                class="task-card"
+                tabindex="0"
+                draggable="true"
+                [class.is-running]="task.isTimerRunning"
+                [class.is-dragging]="draggedTask?.id === task.id"
+                [style.--task-color]="task.color || '#09C1BF'"
+                [attr.aria-label]="task.title"
+                (dragstart)="onDragStart($event, task, column)"
+                (dragend)="onDragEnd()"
+                (click)="openTaskDetail(task)"
+                (keydown.enter)="openTaskDetail(task)"
+              >
+                <div class="task-card-head">
+                  <h3 class="task-title">{{ task.title }}</h3>
+                  @if (getPriority(task); as priority) {
+                    <span class="priority-chip" [class]="priority.cssClass">{{ priority.label }}</span>
+                  }
+                </div>
+
+                @if (task.description) {
+                  <p class="task-description">{{ task.description }}</p>
+                }
+
+                @if (task.dueDate) {
+                  <div class="task-meta">
+                    <span class="chip"><app-icon name="calendar" [size]="12"/> {{ formatDate(task.dueDate) }}</span>
+                  </div>
+                }
+
+                <!-- Timer -->
+                <div class="task-timer">
+                  <div class="timer-readout">
+                    @if (task.isTimerRunning) {
+                      <span class="live-dot"></span>
+                      <span class="timer-digits timer-value">{{ formatDuration(getCurrentElapsedTime(task)) }}</span>
+                      <span class="timer-sub">total {{ formatHuman(getTotalTimeSpent(task)) }}</span>
+                    } @else {
+                      <span class="timer-digits timer-value" [class.is-zero]="getTotalTimeSpent(task) === 0">{{ formatDuration(getTotalTimeSpent(task)) }}</span>
+                      @if (task.sessions.length > 0) {
+                        <span class="timer-sub">{{ pluralize(task.sessions.length, 'session') }}</span>
+                      }
+                    }
+                  </div>
+
+                  @if (task.isTimerRunning) {
+                    <button type="button" class="timer-toggle is-stop card-timer-btn" (click)="stopTimer(task, $event)" (keydown.enter)="$event.stopPropagation()" aria-label="Stop timer" title="Stop timer">
+                      <app-icon name="stop" [size]="14"/>
+                    </button>
+                  } @else {
+                    <button type="button" class="timer-toggle is-start card-timer-btn" (click)="startTimer(task, $event)" (keydown.enter)="$event.stopPropagation()" aria-label="Start timer" title="Start timer">
+                      <app-icon name="play" [size]="14"/>
+                    </button>
+                  }
+                </div>
+              </article>
+            } @empty {
+              <div class="column-empty">Drop tasks here or add a new one</div>
+            }
+
+            <button type="button" class="add-task-btn" (click)="openCreateTask(column)">
+              <app-icon name="plus" [size]="15"/> Add task
+            </button>
+          </div>
+        </section>
+      }
+
+      <button type="button" class="add-column-tile" (click)="openCreateColumn()">
+        <app-icon name="plus" [size]="18"/> Add column
+      </button>
+    }
+  </div>
+</div>
+
+<!-- Column create / rename -->
+@if (columnForm) {
+  <app-modal [title]="columnForm.column ? 'Rename column' : 'New column'" (closed)="closeColumnForm()">
+    <form (ngSubmit)="saveColumn()">
+      <div class="modal-body">
+        <div class="field">
+          <label class="field-label" for="column-name">Name</label>
+          <input id="column-name" type="text" class="input" placeholder="e.g. Review" [(ngModel)]="columnForm.name" name="name" maxlength="200" required autocomplete="off"/>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" (click)="closeColumnForm()">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="!columnForm.name.trim() || isSaving">
+          {{ columnForm.column ? 'Save' : 'Add column' }}
+        </button>
+      </div>
+    </form>
+  </app-modal>
+}
+
+<!-- Task create / edit -->
+@if (taskForm) {
+  <app-modal [title]="taskForm.task ? 'Edit task' : 'New task'" (closed)="closeTaskForm()">
+    @if (!taskForm.task) {
+      <span modalEyebrow class="modal-eyebrow">In {{ getColumnName(taskForm.columnId) }}</span>
+    }
+    <form (ngSubmit)="saveTask()">
+      <div class="modal-body">
+        <div class="field">
+          <label class="field-label" for="task-title">Title</label>
+          <input id="task-title" type="text" class="input" placeholder="What needs to be done?" [(ngModel)]="taskForm.title" name="title" maxlength="500" required autocomplete="off"/>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="task-description">Description <span class="optional">optional</span></label>
+          <textarea id="task-description" class="input" placeholder="Add more details…" [(ngModel)]="taskForm.description" name="description" rows="3" maxlength="5000"></textarea>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <span class="field-label" id="task-priority-label">Priority</span>
+            <div class="segmented priority-picker" role="radiogroup" aria-labelledby="task-priority-label">
+              @for (option of priorityOptions; track option.value) {
+                <button type="button" role="radio" [attr.aria-checked]="taskForm.taskPriority === option.value"
+                        [class.is-active]="taskForm.taskPriority === option.value" (click)="taskForm.taskPriority = option.value">
+                  {{ option.label }}
+                </button>
+              }
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="task-due">Due date <span class="optional">optional</span></label>
+            <input id="task-due" type="date" class="input" [(ngModel)]="taskForm.dueDate" name="dueDate"/>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Color</span>
+          <div class="color-swatches" role="radiogroup" aria-label="Task color">
+            @for (color of colorOptions; track color.value) {
+              <button type="button" class="color-swatch" role="radio" [attr.aria-checked]="taskForm.color === color.value"
+                      [class.is-selected]="taskForm.color === color.value" [style.background]="color.value"
+                      [attr.aria-label]="color.label" [title]="color.label" (click)="taskForm.color = color.value"></button>
+            }
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" (click)="closeTaskForm()">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="!taskForm.title.trim() || isSaving">
+          {{ taskForm.task ? 'Save changes' : 'Create task' }}
+        </button>
+      </div>
+    </form>
+  </app-modal>
+}
+
+<!-- Task detail (hidden while its edit form is open) -->
+@if (selectedTask && !taskForm) {
+  <app-modal [title]="selectedTask.title" size="lg" (closed)="closeTaskDetail()">
+    <div modalEyebrow class="detail-meta">
+      <label class="status-select">
+        <span class="visually-hidden">Status</span>
+        <select [ngModel]="selectedTask.columnId" (ngModelChange)="moveTaskToColumn(selectedTask, $event)" aria-label="Move to column">
+          @for (column of columns; track column.id) {
+            <option [ngValue]="column.id">{{ column.name }}</option>
+          }
+        </select>
+        <app-icon name="chevron-down" [size]="14"/>
+      </label>
+      @if (getPriority(selectedTask); as priority) {
+        <span class="priority-chip" [class]="priority.cssClass">{{ priority.label }}</span>
+      }
+      @if (selectedTask.dueDate) {
+        <span class="chip"><app-icon name="calendar" [size]="12"/> Due {{ formatDate(selectedTask.dueDate) }}</span>
+      }
+    </div>
+
+    <div class="modal-body">
+      <!-- Timer panel -->
+      <div class="detail-timer" [class.is-running]="selectedTask.isTimerRunning">
+        <div class="detail-timer-readout">
+          <span class="detail-timer-label">
+            @if (selectedTask.isTimerRunning) {
+              <span class="live-dot"></span> Current session
+            } @else {
+              Total tracked
+            }
+          </span>
+          <span class="timer-digits detail-timer-value">
+            {{ selectedTask.isTimerRunning ? formatDuration(getCurrentElapsedTime(selectedTask)) : formatDuration(getTotalTimeSpent(selectedTask)) }}
+          </span>
+          @if (selectedTask.isTimerRunning) {
+            <span class="detail-timer-sub">Total <span class="mono">{{ formatDuration(getTotalTimeSpent(selectedTask)) }}</span> across {{ pluralize(selectedTask.sessions.length, 'session') }}</span>
+          } @else if (selectedTask.sessions.length > 0) {
+            <span class="detail-timer-sub">across {{ pluralize(selectedTask.sessions.length, 'session') }}</span>
           }
         </div>
-      </div>
-
-      <!-- Add Column Placeholder -->
-      <div class="add-column-placeholder" (click)="openAddColumnModal()">
-        <span class="add-icon">➕</span>
-        <span>Add Column</span>
-      </div>
-    </div>
-  </div>
-</div>
-
-<ng-template #noBoardState>
-  <div class="board-empty-state">
-    <h2>No boards yet</h2>
-    <p>Create your first board to start managing tasks in Kanban view.</p>
-    <button class="btn-add-column" (click)="openCreateBoardModal()">
-      <span>➕</span>
-      <span>Create Board</span>
-    </button>
-  </div>
-</ng-template>
-
-<!-- Add Column Modal -->
-<div class="modal-overlay app-modal-overlay" *ngIf="showAddColumnModal" (click)="closeAddColumnModal()">
-  <div class="modal-content app-modal-content" (click)="$event.stopPropagation()">
-    <div class="modal-header app-modal-header">
-      <h2>Add New Column</h2>
-      <button class="close-btn app-close-btn" (click)="closeAddColumnModal()">✕</button>
-    </div>
-
-    <form (ngSubmit)="addColumn()" class="modal-form app-modal-form">
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Column Name</label>
-        <input
-          type="text"
-          class="form-control app-form-control"
-          placeholder="e.g., In Progress"
-          [(ngModel)]="newColumn.name"
-          name="name"
-          required
-        />
-      </div>
-
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Column Color</label>
-        <div class="color-picker">
-          <div
-            *ngFor="let color of colorOptions"
-            class="color-option"
-            [class.selected]="newColumn.color === color.value"
-            [style.background]="color.value"
-            (click)="newColumn.color = color.value"
-            [title]="color.label"
-          ></div>
-        </div>
-      </div>
-
-      <div class="modal-actions app-modal-actions">
-        <button type="button" class="app-modal-btn app-modal-btn-secondary" (click)="closeAddColumnModal()">
-          Cancel
-        </button>
-        <button type="submit" class="app-modal-btn app-modal-btn-primary" [disabled]="!newColumn.name.trim()">
-          Add Column
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Add Task Modal -->
-<div class="modal-overlay app-modal-overlay" *ngIf="showAddTaskModal" (click)="closeAddTaskModal()">
-  <div class="modal-content app-modal-content" (click)="$event.stopPropagation()">
-    <div class="modal-header app-modal-header">
-      <h2>Add New Task</h2>
-      <button class="close-btn app-close-btn" (click)="closeAddTaskModal()">✕</button>
-    </div>
-
-    <form (ngSubmit)="addTask()" class="modal-form app-modal-form">
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Task Title</label>
-        <input
-          type="text"
-          class="form-control app-form-control"
-          placeholder="What needs to be done?"
-          [(ngModel)]="newTask.title"
-          name="title"
-          required
-        />
-      </div>
-
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Description</label>
-        <textarea
-          class="form-control app-form-control"
-          placeholder="Add more details..."
-          [(ngModel)]="newTask.description"
-          name="description"
-          rows="3"
-        ></textarea>
-      </div>
-
-      <div class="form-row app-form-row">
-        <div class="form-group app-form-group">
-          <label class="form-label app-form-label">Priority</label>
-          <select class="form-control app-form-control" [(ngModel)]="newTask.priority" name="priority">
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-        </div>
-
-        <div class="form-group app-form-group">
-          <label class="form-label app-form-label">Due Date</label>
-          <input
-            type="date"
-            class="form-control app-form-control"
-            [(ngModel)]="newTask.dueDate"
-            name="dueDate"
-          />
-        </div>
-      </div>
-
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Task Color</label>
-        <div class="color-picker">
-          <div
-            *ngFor="let color of colorOptions"
-            class="color-option"
-            [class.selected]="newTask.color === color.value"
-            [style.background]="color.value"
-            (click)="newTask.color = color.value"
-            [title]="color.label"
-          ></div>
-        </div>
-      </div>
-
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Assignee</label>
-        <input
-          type="text"
-          class="form-control app-form-control"
-          placeholder="Who is responsible?"
-          [(ngModel)]="newTask.assignee"
-          name="assignee"
-        />
-      </div>
-
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Tags (comma separated)</label>
-        <input
-          type="text"
-          class="form-control app-form-control"
-          placeholder="e.g., design, urgent, frontend"
-          [(ngModel)]="newTask.tags"
-          name="tags"
-        />
-      </div>
-
-      <div class="modal-actions app-modal-actions">
-        <button type="button" class="app-modal-btn app-modal-btn-secondary" (click)="closeAddTaskModal()">
-          Cancel
-        </button>
-        <button type="submit" class="app-modal-btn app-modal-btn-primary" [disabled]="!newTask.title.trim()">
-          Add Task
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Task Detail Modal -->
-<div class="modal-overlay app-modal-overlay" *ngIf="showTaskDetailModal && selectedTask" (click)="closeTaskDetail()">
-  <div class="modal-content app-modal-content large" (click)="$event.stopPropagation()">
-    <div class="modal-header app-modal-header">
-      <h2>{{ selectedTask.title }}</h2>
-      <button class="close-btn app-close-btn" (click)="closeTaskDetail()">✕</button>
-    </div>
-
-    <div class="task-detail-content">
-      <div class="detail-section">
-        <h3>Description</h3>
-        <p>{{ selectedTask.description || 'No description provided' }}</p>
-      </div>
-
-      <!-- Timer Section in Detail -->
-      <div class="detail-section">
-        <h3>Time Tracking</h3>
-        <div class="detail-timer-section">
-          <div class="total-time-display">
-            <span class="total-icon">⏱️</span>
-            <span class="total-value" [class.running]="selectedTask.isTimerRunning">
-              {{ selectedTask.isTimerRunning ? formatDuration(getCurrentElapsedTime(selectedTask)) : formatDuration(getTotalTimeSpent(selectedTask)) }}
-            </span>
-            <span class="total-label" *ngIf="!selectedTask.isTimerRunning">Total Time</span>
-            <span class="total-label running" *ngIf="selectedTask.isTimerRunning">Current Session</span>
-          </div>
-
-          <div class="cumulative-time" *ngIf="selectedTask.isTimerRunning">
-            <span class="cumulative-label">Total Time (all sessions):</span>
-            <span class="cumulative-value">{{ formatDuration(getTotalTimeSpent(selectedTask) - getCurrentElapsedTime(selectedTask)) }}</span>
-          </div>
-
-          <div class="detail-timer-controls">
-            <button
-              *ngIf="!selectedTask.isTimerRunning"
-              class="detail-timer-btn start"
-              (click)="startTimer(selectedTask, $event)"
-            >
-              ▶ Start Timer
-            </button>
-            <button
-              *ngIf="selectedTask.isTimerRunning"
-              class="detail-timer-btn stop"
-              (click)="stopTimer(selectedTask, $event)"
-            >
-              ⏸ Stop Timer
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Sessions List -->
-      <div class="detail-section" *ngIf="selectedTask.sessions.length > 0">
-        <h3>Sessions ({{ selectedTask.sessions.length }})</h3>
-        <div class="sessions-list">
-          <div class="session-item" *ngFor="let session of selectedTask.sessions">
-            <div class="session-info">
-              <div class="session-core">
-                <span class="session-duration">{{ formatDuration(session.duration) }}</span>
-                <span class="session-time">{{ formatSessionTime(session) }}</span>
-              </div>
-              <span class="session-note-column" *ngIf="session.notes" [title]="session.notes">{{ session.notes }}</span>
-            </div>
-            <button class="session-delete-btn" (click)="deleteSession(selectedTask, session.id, $event)">
-              🗑️
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="detail-row">
-        @if (selectedTask.priority) {
-        <div class="detail-section">
-          <h3>Priority</h3>
-          <div
-            class="priority-badge large"
-            [style.background]="getPriorityColor(selectedTask.priority)">
-            {{ selectedTask.priority }}
-          </div>
-        </div>
+        @if (selectedTask.isTimerRunning) {
+          <button type="button" class="timer-toggle is-stop detail-timer-btn" (click)="stopTimer(selectedTask, $event)">
+            <app-icon name="stop" [size]="16"/> Stop
+          </button>
+        } @else {
+          <button type="button" class="timer-toggle is-start detail-timer-btn" (click)="startTimer(selectedTask, $event)">
+            <app-icon name="play" [size]="16"/> Start
+          </button>
         }
-
-        <div class="detail-section" *ngIf="selectedTask.dueDate">
-          <h3>Due Date</h3>
-          <p>📅 {{ formatDate(selectedTask.dueDate) }}</p>
-        </div>
       </div>
 
-      <div class="detail-section" *ngIf="selectedTask.assignee">
-        <h3>Assignee</h3>
-        <div class="assignee-detail">
-          <span class="assignee-avatar large">{{ selectedTask.assignee.charAt(0) }}</span>
-          <span>{{ selectedTask.assignee }}</span>
-        </div>
-      </div>
+      <section class="detail-section">
+        <h3 class="detail-heading">Description</h3>
+        @if (selectedTask.description) {
+          <p class="detail-description">{{ selectedTask.description }}</p>
+        } @else {
+          <button type="button" class="link-btn" (click)="openEditTask(selectedTask)">Add a description</button>
+        }
+      </section>
 
-      <div class="detail-section" *ngIf="selectedTask.tags?.length ?? 0 > 0">
-        <h3>Tags</h3>
-        <div class="task-tags">
-          <span class="tag" *ngFor="let tag of selectedTask.tags">{{ tag }}</span>
-        </div>
-      </div>
-
-      <div class="task-detail-actions">
-        <button class="btn-delete" (click)="deleteTask(selectedColumn!, selectedTask.id)">
-          🗑️ Delete Task
-        </button>
-      </div>
+      <section class="detail-section">
+        <h3 class="detail-heading">Sessions</h3>
+        @if (selectedTask.sessions.length > 0) {
+          <ul class="session-list">
+            @for (session of getSortedSessions(selectedTask); track session.id) {
+              <li class="session-row" [class.is-live]="isLiveSession(selectedTask, session)">
+                <div class="session-when">
+                  <span class="session-date">{{ formatSessionDate(session) }}</span>
+                  <span class="session-range">{{ formatSessionTime(session) }}</span>
+                </div>
+                @if (session.notes) {
+                  <span class="session-note" [title]="session.notes">{{ session.notes }}</span>
+                }
+                @if (isLiveSession(selectedTask, session)) {
+                  <span class="chip chip-live"><span class="live-dot"></span>{{ formatDuration(getCurrentElapsedTime(selectedTask)) }}</span>
+                } @else {
+                  <span class="session-duration mono">{{ formatHuman(session.duration) }}</span>
+                  <button type="button" class="btn btn-ghost btn-icon btn-sm danger-hover" (click)="deleteSession(selectedTask, session.id, $event)" aria-label="Delete session" title="Delete session">
+                    <app-icon name="trash" [size]="15"/>
+                  </button>
+                }
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="detail-muted">No time tracked yet. Press Start to begin a session.</p>
+        }
+      </section>
     </div>
-  </div>
-</div>
 
-<!-- Create Board Modal -->
-<div class="modal-overlay app-modal-overlay" *ngIf="showCreateBoardModal" (click)="closeCreateBoardModal()">
-  <div class="modal-content app-modal-content" (click)="$event.stopPropagation()">
-    <div class="modal-header app-modal-header">
-      <h2>Create Board</h2>
-      <button class="close-btn app-close-btn" (click)="closeCreateBoardModal()">✕</button>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-danger" (click)="deleteTask(selectedTask)">
+        <app-icon name="trash" [size]="15"/> Delete
+      </button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-secondary" (click)="openEditTask(selectedTask)">
+        <app-icon name="pencil" [size]="15"/> Edit
+      </button>
     </div>
-
-    <form (ngSubmit)="createBoard()" class="modal-form app-modal-form">
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Board Name</label>
-        <input
-          type="text"
-          class="form-control app-form-control"
-          placeholder="e.g., Product Team"
-          [(ngModel)]="newBoard.name"
-          name="boardName"
-          required
-        />
-      </div>
-
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Description</label>
-        <textarea
-          class="form-control app-form-control"
-          placeholder="What is this board about?"
-          [(ngModel)]="newBoard.description"
-          name="boardDescription"
-          rows="3"
-        ></textarea>
-      </div>
-
-      <div class="form-group app-form-group">
-        <label class="form-label app-form-label">Board Color</label>
-        <div class="color-picker">
-          <div
-            *ngFor="let color of colorOptions"
-            class="color-option"
-            [class.selected]="newBoard.color === color.value"
-            [style.background]="color.value"
-            (click)="newBoard.color = color.value"
-            [title]="color.label"
-          ></div>
-        </div>
-      </div>
-
-      <div class="modal-actions app-modal-actions">
-        <button type="button" class="app-modal-btn app-modal-btn-secondary" (click)="closeCreateBoardModal()">
-          Cancel
-        </button>
-        <button type="submit" class="app-modal-btn app-modal-btn-primary" [disabled]="!newBoard.name.trim()">
-          Create Board
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
+  </app-modal>
+}

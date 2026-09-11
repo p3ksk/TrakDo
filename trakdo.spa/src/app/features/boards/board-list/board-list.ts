@@ -1,44 +1,59 @@
-import { Component, OnInit, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { BoardService } from '../../../core/services/board.service';
+import { BoardSelectionService } from '../../../core/services/board-selection.service';
+import { DateTimeFormatService } from '../../../core/services/date-time-format.service';
+import { NotificationService } from '../../../core/services/notification.service';
+import { Icon } from '../../../shared/icon/icon';
+import { Modal } from '../../../shared/modal/modal';
+import { PageHeader } from '../../../shared/page-header/page-header';
+import { COLOR_OPTIONS } from '../../../core/models/color.model';
+import { pluralize } from '../../../core/utils/duration';
+
+interface BoardFormState {
+  board: Board | null; // null = create
+  name: string;
+  description: string;
+  color: string;
+}
 
 @Component({
   selector: 'app-board-list',
   standalone: true,
-  imports: [CommonModule, RouterLink, FormsModule],
+  imports: [RouterLink, FormsModule, Icon, Modal, PageHeader],
   templateUrl: './board-list.html',
   styleUrl: './board-list.css'
 })
 export class BoardList implements OnInit {
+  private boardService = inject(BoardService);
+  private boardSelectionService = inject(BoardSelectionService);
+  private dateTimeFormat = inject(DateTimeFormatService);
+  private notification = inject(NotificationService);
+  private router = inject(Router);
+
+  readonly colorOptions = COLOR_OPTIONS;
+  readonly searchThreshold = 6;
+
   boards = signal<Board[]>([]);
-  filteredBoards = signal<Board[]>([]);
-  searchQuery = '';
-  showCreateModal = false;
+  isLoading = signal(true);
+  isSaving = signal(false);
+  searchQuery = signal('');
+  boardForm = signal<BoardFormState | null>(null);
 
-  newBoard: Board = {
-    createdAt: new Date,
-    id: 0,
-    sortOrder: 0,
-    tasksCount: 0,
-    updatedAt: new Date(),
-    name: '',
-    description: '',
-    color: '#09C1BF'
-  };
+  filteredBoards = computed(() => {
+    const query = this.searchQuery().toLowerCase().trim();
+    if (!query) {
+      return this.boards();
+    }
 
-  colorOptions = [
-    { value: '#09C1BF', label: 'Teal' },
-    { value: '#FD7F44', label: 'Orange' },
-    { value: '#FCCE5F', label: 'Yellow' },
-    { value: '#10b981', label: 'Green' },
-    { value: '#8b5cf6', label: 'Purple' },
-    { value: '#ec4899', label: 'Pink' }
-  ];
+    return this.boards().filter(board =>
+      board.name.toLowerCase().includes(query) ||
+      (board.description ?? '').toLowerCase().includes(query)
+    );
+  });
 
-  constructor(private boardService: BoardService) {
-  }
+  subtitle = computed(() => this.isLoading() ? '' : pluralize(this.boards().length, 'board'));
 
   ngOnInit(): void {
     this.loadBoards();
@@ -46,93 +61,94 @@ export class BoardList implements OnInit {
 
   loadBoards(): void {
     this.boardService.getBoards().subscribe({
-      next: (boards) => {
-        this.boards.set(boards);
-        this.searchBoards()
+      next: boards => {
+        this.boards.set([...boards].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id));
+        this.isLoading.set(false);
       },
-      error: (err) => console.error(err)
+      error: err => {
+        console.error(err);
+        this.isLoading.set(false);
+        this.notification.error('Failed to load boards.');
+      }
     });
   }
 
-  searchBoards(): void {
-    const query = this.searchQuery.toLowerCase().trim();
-
-    if (!query) {
-      this.filteredBoards.set([...this.boards()]);
-      return;
-    }
-
-    this.filteredBoards.set(this.boards().filter(board =>
-      board.name.toLowerCase().includes(query) ||
-      board.description.toLowerCase().includes(query)
-    ));
+  openCreate(): void {
+    this.boardForm.set({ board: null, name: '', description: '', color: this.colorOptions[0].value });
   }
 
-  openCreateModal(): void {
-    this.showCreateModal = true;
-  }
-
-  closeCreateModal(): void {
-    this.showCreateModal = false;
-    this.resetForm();
-  }
-
-  createBoard(): void {
-    if (!this.newBoard.name.trim()) {
-      return;
-    }
-
-    const board: Board = {
-      id: 0,
-      name: this.newBoard.name,
-      description: this.newBoard.description,
-      color: this.newBoard.color,
-      tasksCount: 0,
-      sortOrder: this.boards().length,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-
-
-    this.boardService.createBoard(board).subscribe(createdBoardId => {
-      board.id = createdBoardId;
-      this.boards().unshift(board);
-      this.searchBoards();
-      this.closeCreateModal();
+  openEdit(board: Board): void {
+    this.boardForm.set({
+      board,
+      name: board.name,
+      description: board.description ?? '',
+      color: board.color || this.colorOptions[0].value
     });
   }
 
-  deleteBoard(id: number): void {
-    if (confirm('Are you sure you want to delete this board?')) {
-      this.boardService.deleteBoard(id).subscribe({
-        next: () => this.loadBoards()
-      })
+  closeForm(): void {
+    this.boardForm.set(null);
+  }
+
+  saveBoard(): void {
+    const form = this.boardForm();
+    const name = form?.name.trim();
+    if (!form || !name || this.isSaving()) {
+      return;
     }
-  }
 
-
-  resetForm(): void {
-    this.newBoard = {
-      createdAt: new Date(),
-      id: 0,
-      sortOrder: 0,
-      tasksCount: 0,
-      updatedAt: new Date(),
-      name: '',
-      description: '',
-      color: '#09C1BF'
+    const payload: BoardPayload = {
+      name,
+      description: form.description.trim(),
+      color: form.color,
+      sortOrder: form.board?.sortOrder ?? this.boards().length
     };
+
+    this.isSaving.set(true);
+    if (form.board) {
+      this.boardService.updateBoard(form.board.id, payload).subscribe({
+        next: () => {
+          this.isSaving.set(false);
+          this.closeForm();
+          this.loadBoards();
+        },
+        error: () => {
+          this.isSaving.set(false);
+          this.notification.error('Failed to save board.');
+        }
+      });
+      return;
+    }
+
+    this.boardService.createBoard(payload).subscribe({
+      next: createdBoardId => {
+        this.isSaving.set(false);
+        this.closeForm();
+        this.boardSelectionService.setSelectedBoard(createdBoardId);
+        this.router.navigate(['/board', createdBoardId, 'tasks']);
+      },
+      error: () => {
+        this.isSaving.set(false);
+        this.notification.error('Failed to create board.');
+      }
+    });
   }
 
-  getRelativeTime(date: Date): string {
-    const now = new Date();
-    const diffInMs = now.getTime() - new Date(date).getTime();
-    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+  deleteBoard(board: Board): void {
+    if (!confirm(`Delete "${board.name}"? All of its columns, tasks and tracked time will be permanently removed.`)) {
+      return;
+    }
 
-    if (diffInDays === 0) return 'Today';
-    if (diffInDays === 1) return 'Yesterday';
-    if (diffInDays < 7) return `${diffInDays} days ago`;
-    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`;
-    return `${Math.floor(diffInDays / 30)} months ago`;
+    this.boardService.deleteBoard(board.id).subscribe({
+      next: () => {
+        this.notification.success(`Deleted "${board.name}".`);
+        this.loadBoards();
+      },
+      error: () => this.notification.error('Failed to delete board.')
+    });
+  }
+
+  formatCreated(board: Board): string {
+    return this.dateTimeFormat.formatDate(this.dateTimeFormat.parseApiDateTime(board.created));
   }
 }

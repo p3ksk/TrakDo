@@ -1,9 +1,11 @@
-<div class="notification-container">
+<div class="toast-stack" aria-live="polite" aria-atomic="false">
   @for (notification of notifications(); track notification.id) {
-    <div class="notification notification-{{ notification.type }}">
-      <div class="notification-icon">{{ getIcon(notification.type) }}</div>
-      <div class="notification-message">{{ notification.message }}</div>
-      <button class="notification-close" (click)="close(notification.id)">×</button>
+    <div class="toast toast-{{ notification.type }}" [attr.role]="notification.type === 'error' ? 'alert' : 'status'">
+      <app-icon class="toast-icon" [name]="getIcon(notification.type)" [size]="18"/>
+      <div class="toast-message">{{ notification.message }}</div>
+      <button type="button" class="btn btn-ghost btn-icon btn-sm toast-close" (click)="close(notification.id)" aria-label="Dismiss">
+        <app-icon name="x" [size]="15"/>
+      </button>
     </div>
   }
 </div>

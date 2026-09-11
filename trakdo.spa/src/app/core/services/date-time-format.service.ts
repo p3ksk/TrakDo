@@ -46,6 +46,11 @@ export class DateTimeFormatService {
     return fromZonedTime(parsed, this.settingsService.settings().timezone);
   }
 
+  /** Format in the user's timezone with an arbitrary date-fns pattern. */
+  format(date: Date, pattern: string): string {
+    return formatInTimeZone(date, this.settingsService.settings().timezone, pattern);
+  }
+
   formatMonthYear(date: Date): string {
     return formatInTimeZone(date, this.settingsService.settings().timezone, 'MMMM yyyy');
   }
