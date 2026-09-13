@@ -2,7 +2,6 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using MySqlConnector;
 using TrakDo.API.Data;
 
 namespace TrakDo.API.Helpers;
@@ -14,47 +13,36 @@ public static class StartupServicesBuildHelper
         builder.Services.AddSingleton<TokenHelper>();
     }
 
+    /// <summary>
+    /// Brings the schema up to date at startup. If the database is not reachable this throws and
+    /// the process exits, which the container restart policy retries — no retry loop needed here.
+    /// </summary>
+    public static void ApplyMigrations(this WebApplication app)
+    {
+        using var context = app.Services.GetRequiredService<IDbContextFactory<TrakDoDbContext>>().CreateDbContext();
+        context.Database.Migrate();
+    }
+
     public static void SetupDatabase(this WebApplicationBuilder builder)
     {
         var connectionString = builder.Configuration.GetConnectionString("MySqlServer");
+
+        // AutoDetect opens a connection of its own, and this lambda runs every time a context is
+        // created — which, because the controllers use IDbContextFactory, is once per request.
+        // Resolve it once instead. PublicationOnly is what keeps a failure from being cached, so a
+        // database that is not up yet gets probed again rather than poisoning the whole process.
+        var serverVersion = new Lazy<ServerVersion>(
+            () => ServerVersion.AutoDetect(connectionString),
+            LazyThreadSafetyMode.PublicationOnly);
+
         builder.Services.AddDbContextFactory<TrakDoDbContext>(opts =>
             opts.UseMySql(
                 connectionString,
-                ServerVersion.AutoDetect(connectionString),
+                serverVersion.Value,
                 mySqlOptions => mySqlOptions.EnableRetryOnFailure()));
     }
 
-    public static void ApplyMigrationsWithRetry(this WebApplication app, int maxAttempts = 10)
-    {
-        ArgumentNullException.ThrowIfNull(app);
 
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            using var scope = app.Services.CreateScope();
-            var services = scope.ServiceProvider;
-            var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("StartupMigration");
-
-            try
-            {
-                services.GetRequiredService<TrakDoDbContext>().Database.Migrate();
-                return;
-            }
-            catch (MySqlException ex) when (attempt < maxAttempts)
-            {
-                logger.LogWarning(ex, "MySQL not ready for migrations (attempt {Attempt}/{MaxAttempts}). Retrying...", attempt, maxAttempts);
-                Thread.Sleep(TimeSpan.FromSeconds(5));
-            }
-            catch (InvalidOperationException ex) when (attempt < maxAttempts)
-            {
-                logger.LogWarning(ex, "Database migration failed with transient startup error (attempt {Attempt}/{MaxAttempts}). Retrying...", attempt, maxAttempts);
-                Thread.Sleep(TimeSpan.FromSeconds(5));
-            }
-        }
-
-        using var finalScope = app.Services.CreateScope();
-        finalScope.ServiceProvider.GetRequiredService<TrakDoDbContext>().Database.Migrate();
-    }
-    
     public static void SetupAuthentication(this WebApplicationBuilder builder)
     {
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>

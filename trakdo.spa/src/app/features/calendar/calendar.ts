@@ -9,6 +9,7 @@ import { BoardSelectionService } from '../../core/services/board-selection.servi
 import { BoardService } from '../../core/services/board.service';
 import { CalendarRangeStateService } from '../../core/services/calendar-range-state.service';
 import { formatHuman } from '../../core/utils/duration';
+import { DaySlice, sliceSessionByDay } from '../../core/utils/session-span';
 import { PageHeader } from '../../shared/page-header/page-header';
 import { RangeToolbar } from '../../shared/range-toolbar/range-toolbar';
 import { SessionEdit, EditableSession } from '../../shared/session-edit/session-edit';
@@ -30,6 +31,19 @@ interface EventBlock {
   lane: number;
   lanes: number;
   timeLabel: string;
+  fullLabel: string;
+  continuesFromPreviousDay: boolean;
+  continuesOnNextDay: boolean;
+}
+
+interface MonthChip {
+  /** Unique per day, so one session appearing on several days keeps stable identities. */
+  key: string;
+  session: CalendarSession;
+  timeLabel: string;
+  fullLabel: string;
+  continuesFromPreviousDay: boolean;
+  continuesOnNextDay: boolean;
 }
 
 interface WeekColumn {
@@ -48,7 +62,7 @@ interface MonthCell {
   dayNumber: number;
   isCurrentMonth: boolean;
   isToday: boolean;
-  sessions: CalendarSession[];
+  chips: MonthChip[];
   totalSeconds: number;
 }
 
@@ -99,25 +113,19 @@ export class Calendar implements OnInit {
 
     return this.range.getWeekDays().map(date => {
       const dayStart = this.dateTimeFormat.startOfDay(date);
-      const dayEnd = this.dateTimeFormat.endOfDay(date);
+      const dayRange = { start: dayStart, end: this.dateTimeFormat.endOfDay(date) };
       let totalSeconds = 0;
 
-      const pieces = sessions
-        .map(session => {
-          const effectiveEnd = session.endTime ?? new Date(now);
-          if (session.startTime > dayEnd || effectiveEnd < dayStart) {
-            return null;
-          }
-          const clippedStart = Math.max(session.startTime.getTime(), dayStart.getTime());
-          const clippedEnd = Math.min(effectiveEnd.getTime(), dayEnd.getTime() + 1);
-          totalSeconds += Math.max(0, (clippedEnd - clippedStart) / 1000);
-          return {
-            session,
-            startMinute: (clippedStart - dayStart.getTime()) / 60000,
-            endMinute: (clippedEnd - dayStart.getTime()) / 60000
-          };
-        })
-        .filter((piece): piece is { session: CalendarSession; startMinute: number; endMinute: number } => piece !== null);
+      // Limiting the slicer to a single day yields at most one slice per session.
+      const pieces: DaySlice<CalendarSession>[] = [];
+      for (const session of sessions) {
+        const [slice] = sliceSessionByDay(session, this.dateTimeFormat, now, dayRange);
+        if (!slice) {
+          continue;
+        }
+        totalSeconds += slice.seconds;
+        pieces.push(slice);
+      }
 
       return {
         date,
@@ -126,7 +134,7 @@ export class Calendar implements OnInit {
         dayNumber: this.dateTimeFormat.getDayOfMonth(date),
         isToday: this.dateTimeFormat.isToday(date),
         totalSeconds,
-        blocks: this.layoutBlocks(pieces)
+        blocks: this.layoutBlocks(pieces, dayStart)
       };
     });
   });
@@ -170,24 +178,42 @@ export class Calendar implements OnInit {
     const sessions = this.sessions();
     const now = this.now();
 
-    const sessionsByDay = new Map<string, CalendarSession[]>();
-    for (const session of [...sessions].sort((a, b) => a.startTime.getTime() - b.startTime.getTime())) {
-      const key = this.dateTimeFormat.getDateKey(session.startTime);
-      sessionsByDay.set(key, [...(sessionsByDay.get(key) ?? []), session]);
+    const gridDays = this.range.getMonthGridDays();
+    const gridRange = {
+      start: this.dateTimeFormat.startOfDay(gridDays[0]),
+      end: this.dateTimeFormat.endOfDay(gridDays[gridDays.length - 1])
+    };
+
+    // A session that crosses midnight belongs to every day it touches, counting only that day's share.
+    const slicesByDay = new Map<string, DaySlice<CalendarSession>[]>();
+    for (const session of sessions) {
+      for (const slice of sliceSessionByDay(session, this.dateTimeFormat, now, gridRange)) {
+        const bucket = slicesByDay.get(slice.key);
+        bucket ? bucket.push(slice) : slicesByDay.set(slice.key, [slice]);
+      }
+    }
+    for (const bucket of slicesByDay.values()) {
+      bucket.sort((a, b) => a.start.getTime() - b.start.getTime());
     }
 
-    return this.range.getMonthGridDays().map(date => {
+    return gridDays.map(date => {
       const key = this.dateTimeFormat.getDateKey(date);
-      const daySessions = sessionsByDay.get(key) ?? [];
+      const daySlices = slicesByDay.get(key) ?? [];
       return {
         date,
         key,
         dayNumber: this.dateTimeFormat.getDayOfMonth(date),
         isCurrentMonth: this.dateTimeFormat.getMonth(date) === month,
         isToday: this.dateTimeFormat.isToday(date),
-        sessions: daySessions,
-        totalSeconds: daySessions.reduce((sum, session) =>
-          sum + Math.max(0, ((session.endTime?.getTime() ?? now) - session.startTime.getTime()) / 1000), 0)
+        chips: daySlices.map(slice => ({
+          key: `${slice.session.id}-${slice.key}`,
+          session: slice.session,
+          timeLabel: this.sliceTimeLabel(slice),
+          fullLabel: this.fullRangeLabel(slice.session),
+          continuesFromPreviousDay: slice.continuesFromPreviousDay,
+          continuesOnNextDay: slice.continuesOnNextDay
+        })),
+        totalSeconds: daySlices.reduce((sum, slice) => sum + slice.seconds, 0)
       };
     });
   });
@@ -281,7 +307,12 @@ export class Calendar implements OnInit {
   }
 
   /** Assigns side-by-side lanes to overlapping sessions within a day. */
-  private layoutBlocks(pieces: { session: CalendarSession; startMinute: number; endMinute: number }[]): EventBlock[] {
+  private layoutBlocks(slices: DaySlice<CalendarSession>[], dayStart: Date): EventBlock[] {
+    const pieces = slices.map(slice => ({
+      slice,
+      startMinute: (slice.start.getTime() - dayStart.getTime()) / 60000,
+      endMinute: (slice.end.getTime() - dayStart.getTime()) / 60000
+    }));
     const sorted = [...pieces].sort((a, b) => a.startMinute - b.startMinute || b.endMinute - a.endMinute);
     const blocks: EventBlock[] = [];
     let cluster: EventBlock[] = [];
@@ -312,12 +343,15 @@ export class Calendar implements OnInit {
       clusterEnd = Math.max(clusterEnd, visualEnd);
 
       const block: EventBlock = {
-        session: piece.session,
+        session: piece.slice.session,
         startMinute: piece.startMinute,
         endMinute: piece.endMinute,
         lane,
         lanes: 1,
-        timeLabel: `${this.formatTime(piece.session.startTime)} – ${piece.session.endTime ? this.formatTime(piece.session.endTime) : 'now'}`
+        timeLabel: this.sliceTimeLabel(piece.slice),
+        fullLabel: this.fullRangeLabel(piece.slice.session),
+        continuesFromPreviousDay: piece.slice.continuesFromPreviousDay,
+        continuesOnNextDay: piece.slice.continuesOnNextDay
       };
       cluster.push(block);
       blocks.push(block);
@@ -361,6 +395,27 @@ export class Calendar implements OnInit {
 
   isRunning(session: CalendarSession): boolean {
     return !session.endTime;
+  }
+
+  /** Times as they read on this one day: an ellipsis stands for "carries on past midnight". */
+  private sliceTimeLabel(slice: DaySlice<CalendarSession>): string {
+    const start = slice.continuesFromPreviousDay ? '…' : this.formatTime(slice.session.startTime);
+    if (slice.continuesOnNextDay) {
+      return `${start} – …`;
+    }
+    return `${start} – ${slice.session.endTime ? this.formatTime(slice.session.endTime) : 'now'}`;
+  }
+
+  /** The session's real extent, spelled out with dates when it spans more than one day. */
+  private fullRangeLabel(session: CalendarSession): string {
+    const start = `${this.dateTimeFormat.formatMonthDay(session.startTime)} ${this.formatTime(session.startTime)}`;
+    if (!session.endTime) {
+      return `${start} – now`;
+    }
+    if (this.dateTimeFormat.isSameDay(session.startTime, session.endTime)) {
+      return `${start} – ${this.formatTime(session.endTime)}`;
+    }
+    return `${start} – ${this.dateTimeFormat.formatMonthDay(session.endTime)} ${this.formatTime(session.endTime)}`;
   }
 
   formatTime(date: Date): string {

@@ -71,6 +71,6 @@ app.UseAuthorization();
 app.UseRateLimiter();
 app.MapControllers();
 
-app.ApplyMigrationsWithRetry();
+app.ApplyMigrations();
 
 app.Run();

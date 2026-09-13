@@ -32,12 +32,14 @@
               class="event"
               [class.is-running]="isRunning(block.session)"
               [class.is-compact]="blockHeight(block) < 38"
+              [class.continues-from]="block.continuesFromPreviousDay"
+              [class.continues-to]="block.continuesOnNextDay"
               [style.--event-color]="block.session.color"
               [style.top.px]="blockTop(block)"
               [style.height.px]="blockHeight(block)"
               [style.left]="'calc(' + (block.lane / block.lanes * 100) + '% + 2px)'"
               [style.width]="'calc(' + (100 / block.lanes) + '% - 4px)'"
-              [title]="block.session.title + ' · ' + block.timeLabel"
+              [title]="block.session.title + ' · ' + block.fullLabel"
               (click)="openSession(block.session)"
             >
               <span class="event-title">{{ block.session.title }}</span>
@@ -72,15 +74,20 @@
           </div>
 
           <div class="cell-sessions">
-            @for (session of cell.sessions.slice(0, maxMonthChips); track session.id) {
-              <button type="button" class="month-chip" [class.is-running]="isRunning(session)" [style.--event-color]="session.color"
-                      [title]="session.title + ' · ' + formatTime(session.startTime)" (click)="openSession(session)">
+            @for (chip of cell.chips.slice(0, maxMonthChips); track chip.key) {
+              <button type="button" class="month-chip" [class.is-running]="isRunning(chip.session)"
+                      [class.continues-from]="chip.continuesFromPreviousDay"
+                      [style.--event-color]="chip.session.color"
+                      [title]="chip.session.title + ' · ' + chip.fullLabel" (click)="openSession(chip.session)">
                 <span class="chip-dot"></span>
-                <span class="chip-title">{{ session.title }}</span>
+                <span class="chip-title">{{ chip.session.title }}</span>
+                @if (chip.continuesFromPreviousDay) {
+                  <span class="chip-carry" aria-label="Continued from the previous day">↳</span>
+                }
               </button>
             }
-            @if (cell.sessions.length > maxMonthChips) {
-              <button type="button" class="more-link" (click)="showWeekOf(cell.date)">+{{ cell.sessions.length - maxMonthChips }} more</button>
+            @if (cell.chips.length > maxMonthChips) {
+              <button type="button" class="more-link" (click)="showWeekOf(cell.date)">+{{ cell.chips.length - maxMonthChips }} more</button>
             }
           </div>
         </div>

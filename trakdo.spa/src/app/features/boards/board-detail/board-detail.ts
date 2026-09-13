@@ -11,6 +11,7 @@ import {BoardSelectionService} from '../../../core/services/board-selection.serv
 import {Observable, Subscription} from 'rxjs';
 import {getPriorityOption, PRIORITY_OPTIONS, PriorityOption, TaskPriority} from '../../../core/models/priority.model';
 import {formatClock, formatHuman, pluralize} from '../../../core/utils/duration';
+import {spanDays} from '../../../core/utils/session-span';
 import {COLOR_OPTIONS} from '../../../core/models/color.model';
 import {Icon} from '../../../shared/icon/icon';
 import {Modal} from '../../../shared/modal/modal';
@@ -520,8 +521,14 @@ export class BoardDetail implements OnInit, OnDestroy {
   formatSessionTime(session: Session): string {
     const start = this.dateTimeFormat.parseApiDateTime(session.startTime);
     const end = session.endTime ? this.dateTimeFormat.parseApiDateTime(session.endTime) : null;
+    const range = `${this.dateTimeFormat.formatTime(start)} – ${end ? this.dateTimeFormat.formatTime(end) : 'now'}`;
+    if (!end) {
+      return range;
+    }
 
-    return `${this.dateTimeFormat.formatTime(start)} – ${end ? this.dateTimeFormat.formatTime(end) : 'now'}`;
+    // Without this a session left running overnight reads like a short one that went backwards.
+    const days = spanDays({ startTime: start, endTime: end }, this.dateTimeFormat, Date.now());
+    return days > 0 ? `${range} (+${days}d)` : range;
   }
 
   deleteSession(task: Task, sessionId: number, event: Event): void {

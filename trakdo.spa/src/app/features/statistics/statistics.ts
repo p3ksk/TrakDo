@@ -9,6 +9,7 @@ import { CalendarRangeStateService } from '../../core/services/calendar-range-st
 import { SettingsService } from '../../core/services/settings.service';
 import { SessionBusService } from '../../core/services/session-bus.service';
 import { formatHuman, pluralize } from '../../core/utils/duration';
+import { InstantRange, overlapSeconds, sliceSessionByDay } from '../../core/utils/session-span';
 import { Icon } from '../../shared/icon/icon';
 import { PageHeader } from '../../shared/page-header/page-header';
 import { RangeToolbar } from '../../shared/range-toolbar/range-toolbar';
@@ -245,13 +246,13 @@ export class Statistics implements OnInit {
   }
 
   private computeStatistics(sessions: StatisticsSession[], rangeStart: Date, rangeEnd: Date): void {
-    const totalDuration = sessions.reduce((sum, session) => sum + this.getSessionDuration(session), 0);
+    const range: InstantRange = { start: rangeStart, end: rangeEnd };
+    // Only the part of each session that falls inside the period counts towards it; the API
+    // returns anything overlapping, which includes sessions running in from an earlier period.
+    const totalDuration = sessions.reduce((sum, session) => sum + this.getRangeDuration(session, range), 0);
     const sessionsCount = sessions.length;
-    const activeDays = new Set(
-      sessions
-        .filter(session => this.getSessionDuration(session) > 0)
-        .map(session => this.dateTimeFormat.getDateKey(session.startTime))
-    ).size;
+    const dailyTrend = this.buildDailyTrend(sessions, rangeStart, rangeEnd);
+    const activeDays = dailyTrend.filter(point => point.duration > 0).length;
 
     this.overview.set({
       totalDuration,
@@ -260,20 +261,23 @@ export class Statistics implements OnInit {
       activeDays
     });
 
-    this.dailyTrend.set(this.buildDailyTrend(sessions, rangeStart, rangeEnd));
-    this.topTasks.set(this.buildTopTasks(sessions));
+    this.dailyTrend.set(dailyTrend);
+    this.topTasks.set(this.buildTopTasks(sessions, range));
     this.hasError.set(false);
   }
 
   private buildDailyTrend(sessions: StatisticsSession[], rangeStart: Date, rangeEnd: Date): DailyTrendPoint[] {
     const byDate = new Map<string, { duration: number; sessionsCount: number }>();
 
+    // A session crossing midnight lands on every day it touches, each with only its own share.
     for (const session of sessions) {
-      const key = this.dateTimeFormat.getDateKey(session.startTime);
-      const current = byDate.get(key) ?? { duration: 0, sessionsCount: 0 };
-      current.duration += this.getSessionDuration(session);
-      current.sessionsCount += 1;
-      byDate.set(key, current);
+      const slices = sliceSessionByDay(session, this.dateTimeFormat, Date.now(), { start: rangeStart, end: rangeEnd });
+      for (const slice of slices) {
+        const current = byDate.get(slice.key) ?? { duration: 0, sessionsCount: 0 };
+        current.duration += slice.seconds;
+        current.sessionsCount += 1;
+        byDate.set(slice.key, current);
+      }
     }
 
     const rangeDays = this.getRangeDays(rangeStart, rangeEnd);
@@ -295,7 +299,7 @@ export class Statistics implements OnInit {
     });
   }
 
-  private buildTopTasks(sessions: StatisticsSession[]): TopTaskStatistic[] {
+  private buildTopTasks(sessions: StatisticsSession[], range: InstantRange): TopTaskStatistic[] {
     const byTask = new Map<number, { title: string; totalDuration: number; sessionsCount: number }>();
 
     for (const session of sessions) {
@@ -304,7 +308,7 @@ export class Statistics implements OnInit {
         totalDuration: 0,
         sessionsCount: 0
       };
-      current.totalDuration += this.getSessionDuration(session);
+      current.totalDuration += this.getRangeDuration(session, range);
       current.sessionsCount += 1;
       byTask.set(session.taskId, current);
     }
@@ -349,16 +353,9 @@ export class Statistics implements OnInit {
     return `${this.dateTimeFormat.getDayOfMonth(date)}`;
   }
 
-  private getSessionDuration(session: StatisticsSession): number {
-    if (session.duration > 0) {
-      return session.duration;
-    }
-
-    if (session.endTime) {
-      return Math.max(0, Math.floor((session.endTime.getTime() - session.startTime.getTime()) / 1000));
-    }
-
-    return Math.max(0, Math.floor((Date.now() - session.startTime.getTime()) / 1000));
+  /** Seconds of the session that belong to the period on screen; a running one counts up to now. */
+  private getRangeDuration(session: StatisticsSession, range: InstantRange): number {
+    return Math.floor(overlapSeconds(session, range, Date.now()));
   }
 
   private resetStatistics(rangeStart: Date, rangeEnd: Date): void {

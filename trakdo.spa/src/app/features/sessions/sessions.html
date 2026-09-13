@@ -19,7 +19,7 @@
     <span class="summary">
       {{ pluralize(totals().sessions, 'session') }}
       <span class="dot-sep">·</span>
-      <strong class="mono">{{ formatHuman(totals().duration) }}</strong> tracked
+      <strong class="mono">{{ formatHuman(totals().duration) }}</strong> tracked this {{ range.viewMode() }}
     </span>
     <button type="button" class="btn btn-ghost btn-sm" (click)="allCollapsed() ? expandAll() : collapseAll()">
       <app-icon [name]="allCollapsed() ? 'chevron-down' : 'chevron-right'" [size]="15"/>
@@ -47,12 +47,17 @@
               <li class="session-row" [class.is-running]="isRunning(session)">
                 <div class="session-when">
                   <span class="session-day">{{ formatDay(session.startTime) }}</span>
-                  <span class="session-range">{{ formatTime(session.startTime) }} – {{ session.endTime ? formatTime(session.endTime) : 'now' }}</span>
+                  <span class="session-range">
+                    {{ formatTime(session.startTime) }} – {{ session.endTime ? formatTime(session.endTime) : 'now' }}
+                    @if (getSpanDays(session); as days) {
+                      <span class="span-badge" [title]="spanTitle(session)">+{{ days }}d</span>
+                    }
+                  </span>
                 </div>
                 <div class="session-note" [class.is-empty]="!session.notes" [title]="session.notes">{{ session.notes }}</div>
-                <span class="session-duration mono">
+                <span class="session-duration mono" [title]="durationTitle(session)">
                   @if (isRunning(session)) { <span class="live-dot"></span> }
-                  {{ formatHuman(getSessionDuration(session)) }}
+                  {{ formatHuman(getPeriodDuration(session)) }}
                 </span>
                 <div class="session-actions">
                   <button type="button" class="btn btn-ghost btn-icon btn-sm" (click)="openSession(session)" aria-label="Edit session" title="Edit session">

@@ -10,6 +10,7 @@ import { CalendarRangeStateService } from '../../core/services/calendar-range-st
 import { SettingsService } from '../../core/services/settings.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { formatHuman, pluralize } from '../../core/utils/duration';
+import { InstantRange, overlapSeconds, spanDays, totalSeconds } from '../../core/utils/session-span';
 import { Icon } from '../../shared/icon/icon';
 import { PageHeader } from '../../shared/page-header/page-header';
 import { RangeToolbar } from '../../shared/range-toolbar/range-toolbar';
@@ -69,6 +70,8 @@ export class Sessions implements OnInit {
   private collapsedTaskIds = signal<Set<number>>(new Set());
   private now = signal(Date.now());
   private routeBoardId = signal<number | null>(null);
+  /** The period the loaded sessions were fetched for; durations are reported against it. */
+  private loadedRange = signal<InstantRange | null>(null);
   private loadSessionsRequestId = 0;
 
   sessionGroups = computed<TaskSessionGroup[]>(() => {
@@ -86,7 +89,7 @@ export class Sessions implements OnInit {
         isRunning: false
       };
       group.sessions.push(session);
-      group.totalDuration += this.getSessionDuration(session);
+      group.totalDuration += this.getPeriodDuration(session);
       group.lastActivity = Math.max(group.lastActivity, session.startTime.getTime());
       group.isRunning ||= this.isRunning(session);
       groups.set(session.taskId, group);
@@ -173,6 +176,7 @@ export class Sessions implements OnInit {
         }
 
         this.now.set(Date.now());
+        this.loadedRange.set(range);
         this.sessionNodes.set(sessions.map(session => ({
           id: Number(session.id),
           taskId: Number(session.taskId),
@@ -234,7 +238,7 @@ export class Sessions implements OnInit {
   }
 
   deleteSession(session: SessionNode): void {
-    if (!confirm(`Delete this ${formatHuman(this.getSessionDuration(session))} session on "${session.taskTitle}"?`)) {
+    if (!confirm(`Delete this ${formatHuman(this.getFullDuration(session))} session on "${session.taskTitle}"?`)) {
       return;
     }
 
@@ -256,14 +260,42 @@ export class Sessions implements OnInit {
     return !session.endTime;
   }
 
-  getSessionDuration(session: SessionNode): number {
-    if (session.endTime) {
-      return session.duration > 0
-        ? session.duration
-        : Math.max(0, Math.floor((session.endTime.getTime() - session.startTime.getTime()) / 1000));
+  /**
+   * Seconds of the session that fall inside the period on screen. A session that crosses the
+   * period boundary only contributes its share, so the rows add up to the header total.
+   */
+  getPeriodDuration(session: SessionNode): number {
+    const range = this.loadedRange();
+    if (!range) {
+      return this.getFullDuration(session);
     }
 
-    return Math.max(0, Math.floor((this.now() - session.startTime.getTime()) / 1000));
+    return Math.floor(overlapSeconds(session, range, this.now()));
+  }
+
+  /** The session's whole length, which for a session spilling out of the period is longer. */
+  getFullDuration(session: SessionNode): number {
+    return Math.floor(totalSeconds(session, this.now()));
+  }
+
+  /** 0 when the session starts and ends on the same day, 1 when it ends the next day, and so on. */
+  getSpanDays(session: SessionNode): number {
+    return spanDays(session, this.dateTimeFormat, this.now());
+  }
+
+  durationTitle(session: SessionNode): string {
+    const full = this.getFullDuration(session);
+    if (full === this.getPeriodDuration(session)) {
+      return '';
+    }
+
+    return `${formatHuman(full)} in total — the rest falls outside this ${this.range.viewMode()}`;
+  }
+
+  spanTitle(session: SessionNode): string {
+    return session.endTime
+      ? `Ends ${this.formatDay(session.endTime)} at ${this.formatTime(session.endTime)}`
+      : 'Still running';
   }
 
   private parseBoardId(rawBoardId: string | null): number | null {

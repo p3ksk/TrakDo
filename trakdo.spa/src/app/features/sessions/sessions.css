@@ -135,6 +135,17 @@
   color: var(--color-text-tertiary);
 }
 
+/* Flags a session that ends on a later day than it starts. */
+.span-badge {
+  margin-left: 0.3rem;
+  padding: 0 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  background: rgba(var(--color-accent-rgb), 0.12);
+  border-radius: var(--radius-sm);
+}
+
 .session-note {
   min-width: 0;
   font-size: 0.85rem;

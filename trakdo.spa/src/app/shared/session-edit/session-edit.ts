@@ -17,8 +17,6 @@ export interface EditableSession {
   color?: string;
 }
 
-const MINUTES_PER_DAY = 24 * 60;
-
 /** Edit / delete dialog for a tracked session. Broadcasts changes on the SessionBus. */
 @Component({
   selector: 'app-session-edit',
@@ -32,31 +30,40 @@ const MINUTES_PER_DAY = 24 * 60;
       </span>
       <form (ngSubmit)="save()">
         <div class="modal-body">
-          <div class="field">
-            <label class="field-label" for="session-date">Date</label>
-            <input id="session-date" type="date" class="input" [ngModel]="date()" (ngModelChange)="date.set($event)" name="date" required/>
+          <div class="field-row">
+            <div class="field">
+              <label class="field-label" for="session-start-date">Start date</label>
+              <input id="session-start-date" type="date" class="input" [ngModel]="startDate()"
+                     (ngModelChange)="onStartDateChange($event)" name="startDate" required/>
+            </div>
+            <div class="field">
+              <label class="field-label" for="session-start-time">Start time</label>
+              <input id="session-start-time" type="time" class="input" [ngModel]="startTime()"
+                     (ngModelChange)="startTime.set($event)" name="startTime" required/>
+            </div>
           </div>
 
           <div class="field-row">
             <div class="field">
-              <label class="field-label" for="session-start">Start</label>
-              <input id="session-start" type="time" class="input" [ngModel]="startTime()" (ngModelChange)="startTime.set($event)" name="startTime" required/>
+              <label class="field-label" for="session-end-date">End date</label>
+              <input id="session-end-date" type="date" class="input" [class.is-invalid]="!!validationError()"
+                     [min]="startDate()" [ngModel]="endDate()" (ngModelChange)="endDate.set($event)" name="endDate"/>
             </div>
             <div class="field">
-              <label class="field-label" for="session-end">End</label>
-              <input id="session-end" type="time" class="input" [class.is-invalid]="!!validationError()"
-                     [ngModel]="endTime()" (ngModelChange)="endTime.set($event)" name="endTime"/>
+              <label class="field-label" for="session-end-time">End time</label>
+              <input id="session-end-time" type="time" class="input" [class.is-invalid]="!!validationError()"
+                     [ngModel]="endTime()" (ngModelChange)="onEndTimeChange($event)" name="endTime"/>
             </div>
           </div>
 
-          <div class="duration-preview" [class.is-warning]="endsNextDay()" [class.is-error]="!!validationError()">
+          <div class="duration-preview" [class.is-warning]="spanDays() > 0" [class.is-error]="!!validationError()">
             @if (validationError(); as error) {
               <app-icon name="alert" [size]="16"/> {{ error }}
             } @else if (!endTime()) {
               <span class="live-dot"></span> Still running — set an end time to stop it.
             } @else {
               <app-icon name="clock" [size]="16"/>
-              <span><strong class="mono">{{ durationLabel() }}</strong>@if (endsNextDay()) { · ends the next day}</span>
+              <span><strong class="mono">{{ durationLabel() }}</strong>@if (spanDays() > 0) { · {{ spanLabel() }}}</span>
             }
           </div>
 
@@ -101,50 +108,89 @@ export class SessionEdit implements OnInit {
   session = input.required<EditableSession>();
   closed = output<void>();
 
-  date = signal('');
+  startDate = signal('');
   startTime = signal('');
+  endDate = signal('');
   endTime = signal('');
   note = signal('');
   isBusy = signal(false);
 
   private wasRunning = false;
 
-  private durationMinutes = computed(() => {
-    const start = this.toMinutes(this.startTime());
-    const end = this.toMinutes(this.endTime());
-    if (start === null || end === null) {
-      return null;
+  private startInstant = computed(() => this.toInstant(this.startDate(), this.startTime()));
+  private endInstant = computed(() => this.toInstant(this.endDate(), this.endTime()));
+
+  /** Calendar days the session covers beyond its first — 0 when it starts and ends the same day. */
+  spanDays = computed(() => {
+    if (!this.startDate() || !this.endDate()) {
+      return 0;
     }
-    return end > start ? end - start : end + MINUTES_PER_DAY - start;
+    return Math.max(0, dayDistance(this.startDate(), this.endDate()));
   });
 
-  endsNextDay = computed(() => {
-    const start = this.toMinutes(this.startTime());
-    const end = this.toMinutes(this.endTime());
-    return start !== null && end !== null && end < start;
+  spanLabel = computed(() => {
+    const days = this.spanDays();
+    return days === 1 ? 'ends the next day' : `ends ${days} days later`;
   });
 
-  durationLabel = computed(() => formatHuman((this.durationMinutes() ?? 0) * 60));
+  durationLabel = computed(() => {
+    const start = this.startInstant();
+    const end = this.endInstant();
+    if (start === null || end === null) {
+      return formatHuman(0);
+    }
+    return formatHuman((end.getTime() - start.getTime()) / 1000);
+  });
 
   validationError = computed(() => {
     if (!this.endTime()) {
       return this.wasRunning ? null : 'A finished session needs an end time.';
     }
-    if (this.endTime() === this.startTime()) {
-      return 'End time must be different from the start time.';
+    if (!this.endDate()) {
+      return 'A finished session needs an end date.';
     }
-    return null;
+
+    const start = this.startInstant();
+    const end = this.endInstant();
+    if (start === null || end === null) {
+      return null;
+    }
+    return end.getTime() > start.getTime() ? null : 'The end must be after the start.';
   });
 
-  canSave = computed(() => !!this.date() && !!this.startTime() && !this.validationError() && !this.isBusy());
+  canSave = computed(() => !!this.startDate() && !!this.startTime() && !this.validationError() && !this.isBusy());
 
   ngOnInit(): void {
     const session = this.session();
     this.wasRunning = !session.endTime;
-    this.date.set(this.dateTimeFormat.formatDateForInput(session.startTime));
+    this.startDate.set(this.dateTimeFormat.formatDateForInput(session.startTime));
     this.startTime.set(this.dateTimeFormat.formatTimeForInput(session.startTime));
+    this.endDate.set(session.endTime ? this.dateTimeFormat.formatDateForInput(session.endTime) : '');
     this.endTime.set(session.endTime ? this.dateTimeFormat.formatTimeForInput(session.endTime) : '');
     this.note.set(session.notes ?? '');
+  }
+
+  /** Moving the start date drags the end date along, so the session keeps its length. */
+  onStartDateChange(value: string): void {
+    const previous = this.startDate();
+    const end = this.endDate();
+    if (previous && end && value) {
+      this.endDate.set(shiftDate(end, dayDistance(previous, value)));
+    }
+    this.startDate.set(value);
+  }
+
+  onEndTimeChange(value: string): void {
+    this.endTime.set(value);
+    if (!value) {
+      this.endDate.set('');
+      return;
+    }
+
+    if (!this.endDate()) {
+      // Fresh end time: assume the same day, rolling over to the next one when that reads backwards.
+      this.endDate.set(value > this.startTime() ? this.startDate() : shiftDate(this.startDate(), 1));
+    }
   }
 
   save(): void {
@@ -152,11 +198,9 @@ export class SessionEdit implements OnInit {
       return;
     }
 
-    const date = this.date();
-    const endDate = this.endsNextDay() ? this.addOneDay(date) : date;
     const request = {
-      startTime: `${date}T${this.startTime()}:00`,
-      endTime: this.endTime() ? `${endDate}T${this.endTime()}:00` : undefined,
+      startTime: `${this.startDate()}T${this.startTime()}:00`,
+      endTime: this.endTime() ? `${this.endDate()}T${this.endTime()}:00` : undefined,
       notes: this.note().trim()
     };
 
@@ -195,13 +239,26 @@ export class SessionEdit implements OnInit {
     });
   }
 
-  private toMinutes(time: string): number | null {
-    const match = /^(\d{2}):(\d{2})/.exec(time ?? '');
-    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  private toInstant(date: string, time: string): Date | null {
+    if (!date || !/^\d{2}:\d{2}/.test(time ?? '')) {
+      return null;
+    }
+    return this.dateTimeFormat.parseApiDateTime(`${date}T${time.slice(0, 5)}:00`);
   }
+}
 
-  private addOneDay(date: string): string {
-    const [year, month, day] = date.split('-').map(Number);
-    return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
-  }
+/** Whole days between two "yyyy-MM-dd" values, counted as calendar days rather than hours. */
+function dayDistance(fromDate: string, toDate: string): number {
+  return Math.round((toUtcDay(toDate) - toUtcDay(fromDate)) / 86_400_000);
+}
+
+function shiftDate(date: string, days: number): string {
+  const day = toUtcDay(date);
+  // The date input can be cleared, which leaves nothing to shift.
+  return Number.isNaN(day) ? date : new Date(day + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+function toUtcDay(date: string): number {
+  const [year, month, day] = date.split('-').map(Number);
+  return Date.UTC(year, month - 1, day);
 }

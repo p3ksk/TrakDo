@@ -176,6 +176,19 @@
   display: none;
 }
 
+/* A session crossing midnight is drawn once per day; square off the edge it carries over. */
+.event.continues-from {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-top: 2px dashed color-mix(in srgb, var(--event-color) 70%, transparent);
+}
+
+.event.continues-to {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom: 2px dashed color-mix(in srgb, var(--event-color) 70%, transparent);
+}
+
 .now-line {
   position: absolute;
   left: 0;
@@ -335,6 +348,20 @@
   text-overflow: ellipsis;
 }
 
+/* Marks a day that only carries the tail of a session started earlier. */
+.month-chip.continues-from .chip-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--event-color);
+}
+
+.chip-carry {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+}
+
 .more-link {
   align-self: flex-start;
   padding: 0 0.4rem;
@@ -433,8 +460,14 @@
   }
 
   .month-chip .chip-dot,
-  .month-chip .chip-title {
+  .month-chip .chip-title,
+  .month-chip .chip-carry {
     display: none;
+  }
+
+  .month-chip.continues-from {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--event-color);
   }
 
   .more-link {
