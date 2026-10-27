@@ -17,5 +17,8 @@ public class TaskDto
     public DateTime? DueDate { get; set; }
     public DateTime Created { get; set; }
     public DateTime? Updated { get; set; }
+    public DateTime? CompletedAt { get; set; }
+    public DateTime? ArchivedAt { get; set; }
+    public long? CycleId { get; set; }
     public SessionDto[] Sessions { get; set; }
 }

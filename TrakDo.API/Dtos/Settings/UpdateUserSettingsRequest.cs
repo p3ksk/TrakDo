@@ -7,4 +7,5 @@ public class UpdateUserSettingsRequest
     public bool Use24HourTime { get; set; }
     public int WorkDayStartHour { get; set; }
     public int WorkDayEndHour { get; set; }
+    public int AutoArchiveDays { get; set; }
 }

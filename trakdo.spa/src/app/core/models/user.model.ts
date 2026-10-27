@@ -1,6 +1,16 @@
 export interface User {
   username: string,
-  token: string
+  token: string,
+  isAdmin?: boolean
+}
+
+export interface CurrentUser {
+  username: string;
+  isAdmin: boolean;
+}
+
+export interface RegistrationStatus {
+  enabled: boolean;
 }
 
 

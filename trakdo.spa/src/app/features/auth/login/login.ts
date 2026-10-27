@@ -28,11 +28,19 @@ export class Login {
   isLoading = signal(false);
   errorMessage = signal('');
   showPassword = signal(false);
+  registrationEnabled = signal(false);
 
   constructor() {
     if (this.authService.isAuthenticated()) {
       this.router.navigateByUrl('/');
+      return;
     }
+
+    this.authService.getRegistrationStatus().subscribe({
+      next: status => this.registrationEnabled.set(status.enabled),
+      // Keep the sign-up link reachable if the check itself fails; the API still enforces the setting.
+      error: () => this.registrationEnabled.set(true)
+    });
   }
 
   get username() { return this.loginForm.get('username'); }

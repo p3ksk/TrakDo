@@ -3,7 +3,8 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 export type IconName =
   | 'kanban' | 'calendar' | 'clock' | 'chart' | 'grid' | 'settings' | 'logout' | 'menu' | 'x'
   | 'plus' | 'trash' | 'pencil' | 'play' | 'stop' | 'chevron-left' | 'chevron-right' | 'chevron-down'
-  | 'search' | 'eye' | 'eye-off' | 'check' | 'alert' | 'info' | 'panel-left' | 'note';
+  | 'search' | 'eye' | 'eye-off' | 'check' | 'alert' | 'info' | 'panel-left' | 'note'
+  | 'shield' | 'users' | 'key' | 'archive' | 'restore' | 'flag';
 
 /** Inline stroke icons (Lucide-style, 24x24 grid) so they inherit color and render the same on every OS. */
 @Component({
@@ -40,6 +41,12 @@ export type IconName =
         @case ('info') { <circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/> }
         @case ('panel-left') { <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/> }
         @case ('note') { <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6M8 13h8M8 17h5"/> }
+        @case ('shield') { <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/> }
+        @case ('users') { <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/> }
+        @case ('archive') { <rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4"/> }
+        @case ('restore') { <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/> }
+        @case ('flag') { <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/> }
+        @case ('key') { <path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4M21 2l-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/> }
       }
     </svg>
   `

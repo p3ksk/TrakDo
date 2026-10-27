@@ -7,6 +7,8 @@ interface Board {
   /** User-local timestamps as returned by the API. */
   created: string;
   updated?: string | null;
+  cyclesEnabled?: boolean;
+  cycleLengthDays?: number;
 }
 
 interface BoardPayload {

@@ -59,6 +59,11 @@ public class SettingsController : V1BaseController
             return BadRequest("Work day end hour must be greater than start hour.");
         }
 
+        if (request.AutoArchiveDays < 0 || request.AutoArchiveDays > 365)
+        {
+            return BadRequest("Auto-archive days must be between 0 and 365.");
+        }
+
         await using var context = await _contextFactory.CreateDbContextAsync();
         var user = await context.Users.SingleOrDefaultAsync(_ => _.Id == CurrentUserId);
         if (user == null)
@@ -72,6 +77,7 @@ public class SettingsController : V1BaseController
         user.Use24HourTime = request.Use24HourTime;
         user.WorkDayStartHour = request.WorkDayStartHour;
         user.WorkDayEndHour = request.WorkDayEndHour;
+        user.AutoArchiveDays = request.AutoArchiveDays;
 
         await context.SaveChangesAsync();
         return Ok(ToDto(user));
@@ -107,7 +113,8 @@ public class SettingsController : V1BaseController
             DateFormat = user.DateFormat,
             Use24HourTime = user.Use24HourTime,
             WorkDayStartHour = user.WorkDayStartHour,
-            WorkDayEndHour = user.WorkDayEndHour
+            WorkDayEndHour = user.WorkDayEndHour,
+            AutoArchiveDays = user.AutoArchiveDays
         };
     }
 }

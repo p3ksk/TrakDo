@@ -58,7 +58,7 @@ public class BoardController : V1BaseController
         if (includeSessions)
         {
             query = query.Include(_ => _.Columns)
-                .ThenInclude(c => c.Tasks)
+                .ThenInclude(c => c.Tasks.Where(t => t.ArchivedAt == null))
                 .ThenInclude(t => t.Sessions);
         }
 
@@ -136,10 +136,22 @@ public class BoardController : V1BaseController
     public async Task<IActionResult> GetColumnsAsync([FromRoute] long boardId)
     {
         await using var context = await _contextFactory.CreateDbContextAsync();
+        var board = await context.Boards.SingleOrDefaultAsync(_ => _.UserId == CurrentUserId && _.Id == boardId);
+        if (board == null)
+        {
+            _logger.LogWarning("User {currentUserId} looking for columns of non existent board {boardId}", CurrentUserId, boardId);
+            return BadRequest();
+        }
+
+        var autoArchiveDays = await context.Users.Where(_ => _.Id == CurrentUserId).Select(_ => _.AutoArchiveDays).SingleAsync();
+        await BoardLifecycleHelper.RunMaintenanceAsync(context, board, autoArchiveDays);
+
         var timezone = await UserDateTimeHelper.GetUserTimezoneAsync(context, CurrentUserId);
-        var columns = await context.Columns
-            .Include(_ => _.Tasks).ThenInclude(_ => _.Sessions)
-            .Where(_ => _.Board.UserId == CurrentUserId && _.BoardId == boardId).ToArrayAsync();
+        // No tracking: tasks archived by the maintenance above are still tracked and would otherwise
+        // be fixed up into Column.Tasks despite the filter.
+        var columns = await context.Columns.AsNoTracking()
+            .Include(_ => _.Tasks.Where(t => t.ArchivedAt == null)).ThenInclude(_ => _.Sessions)
+            .Where(_ => _.BoardId == boardId).ToArrayAsync();
         var columnDtos = columns.Select(column => column.ToColumnDto()).ToArray();
         foreach (var column in columnDtos)
         {
@@ -178,9 +190,20 @@ public class BoardController : V1BaseController
             return BadRequest();
         }
 
-        var columnToEdit = board.Columns.Single(_ => _.Id == columnId);
+        var columnToEdit = board.Columns.SingleOrDefault(_ => _.Id == columnId);
+        if (columnToEdit == null)
+        {
+            _logger.LogWarning("User {currentUserId} tries to update non existent column {columnId}", CurrentUserId, columnId);
+            return BadRequest();
+        }
+
         columnToEdit.Name = column.Name;
         columnToEdit.SortOrder = column.SortOrder;
+        columnToEdit.Updated = DateTime.UtcNow;
+        if (column.IsDoneColumn.HasValue && column.IsDoneColumn.Value != columnToEdit.IsDoneColumn)
+        {
+            await SetDoneColumnAsync(context, board, column.IsDoneColumn.Value ? columnToEdit : null);
+        }
         await context.SaveChangesAsync();
         return NoContent();
     }
@@ -223,6 +246,24 @@ public class BoardController : V1BaseController
         }
         await context.SaveChangesAsync();
         return NoContent();
+    }
+
+    /// <summary>Makes <paramref name="doneColumn"/> the board's only done column (null = none) and recomputes task completion.</summary>
+    private static async System.Threading.Tasks.Task SetDoneColumnAsync(TrakDoDbContext context, Board board, Column? doneColumn)
+    {
+        foreach (var boardColumn in board.Columns)
+        {
+            boardColumn.IsDoneColumn = boardColumn == doneColumn;
+        }
+
+        var activeCycle = board.CyclesEnabled ? await BoardLifecycleHelper.GetActiveCycleAsync(context, board.Id) : null;
+        var utcNow = DateTime.UtcNow;
+        var activeTasks = await context.Tasks.Where(_ => _.BoardId == board.Id && _.ArchivedAt == null).ToListAsync();
+        foreach (var task in activeTasks)
+        {
+            var taskColumn = board.Columns.Single(_ => _.Id == task.ColumnId);
+            BoardLifecycleHelper.ApplyColumnCompletion(task, taskColumn, activeCycle, utcNow);
+        }
     }
 
     #endregion

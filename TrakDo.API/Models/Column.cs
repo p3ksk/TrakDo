@@ -6,6 +6,8 @@ public class Column
     public long BoardId { get; set; }
     public string Name { get; set; }
     public int SortOrder { get; set; }
+    /// <summary>Tasks in this column count as completed. At most one per board.</summary>
+    public bool IsDoneColumn { get; set; }
     public DateTime Created { get; set; }
     public DateTime? Updated { get; set; }
     

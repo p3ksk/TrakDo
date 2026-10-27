@@ -78,6 +78,13 @@
       <app-icon name="settings"/>
       <span class="nav-text">Settings</span>
     </a>
+    @if (authService.isAdmin()) {
+      <a class="nav-item" routerLink="/admin" [class.active]="isAdminRoute()" [attr.aria-current]="isAdminRoute() ? 'page' : null"
+         [title]="isSidebarCollapsed() ? 'Admin' : ''">
+        <app-icon name="shield"/>
+        <span class="nav-text">Admin</span>
+      </a>
+    }
   </nav>
 
   @if (timers.running().length > 0) {

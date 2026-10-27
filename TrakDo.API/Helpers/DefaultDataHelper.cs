@@ -26,6 +26,7 @@ public class DefaultDataHelper
             {
                 Name = "Done",
                 SortOrder = 3,
+                IsDoneColumn = true,
                 Created = DateTime.UtcNow,
                 BoardId = boardId
             }

@@ -8,6 +8,21 @@
           <span class="mono">{{ formatHuman(getBoardTrackedTime()) }}</span> tracked
         </span>
       }
+      @if (activeCycle; as cycle) {
+        <div class="cycle-pill" [title]="cycle.goal ? 'Goal: ' + cycle.goal : ''">
+          <a class="cycle-pill-label" [routerLink]="['/board', board.id, 'history']">
+            <app-icon name="flag" [size]="14"/>
+            Cycle {{ cycle.number }}
+            <span class="dot-sep">·</span>
+            <span class="cycle-days">{{ getCycleDaysLeft(cycle) === 0 ? 'ends today' : pluralize(getCycleDaysLeft(cycle), 'day') + ' left' }}</span>
+          </a>
+          <span class="cycle-progress" role="progressbar" [attr.aria-valuenow]="getCycleProgress()" aria-valuemin="0" aria-valuemax="100"
+                [attr.aria-label]="getCycleDoneCount() + ' of ' + getTotalTasks() + ' tasks done'" [title]="getCycleDoneCount() + ' of ' + getTotalTasks() + ' done'">
+            <span class="cycle-progress-fill" [style.width.%]="getCycleProgress()"></span>
+          </span>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="openCloseCycle()">Close cycle</button>
+        </div>
+      }
       <button type="button" class="btn btn-secondary" (click)="openCreateColumn()">
         <app-icon name="plus" [size]="16"/> Add column
       </button>
@@ -36,9 +51,17 @@
           (drop)="onDrop($event, column)"
         >
           <header class="column-header">
+            @if (column.isDoneColumn) {
+              <span class="done-marker" title="Done column: tasks here count as completed"><app-icon name="check" [size]="13"/></span>
+            }
             <h2 class="column-title" [title]="column.name">{{ column.name }}</h2>
             <span class="column-count">{{ column.tasks.length }}</span>
             <div class="column-actions">
+              @if (column.isDoneColumn && column.tasks.length > 0) {
+                <button type="button" class="btn btn-ghost btn-icon btn-sm reveal" (click)="archiveDoneTasks(column)" [attr.aria-label]="'Archive all tasks in ' + column.name" title="Archive all done tasks">
+                  <app-icon name="archive" [size]="15"/>
+                </button>
+              }
               <button type="button" class="btn btn-ghost btn-icon btn-sm" (click)="openCreateTask(column)" [attr.aria-label]="'Add task to ' + column.name" title="Add task">
                 <app-icon name="plus" [size]="16"/>
               </button>
@@ -136,6 +159,15 @@
           <label class="field-label" for="column-name">Name</label>
           <input id="column-name" type="text" class="input" placeholder="e.g. Review" [(ngModel)]="columnForm.name" name="name" maxlength="200" required autocomplete="off"/>
         </div>
+        @if (columnForm.column) {
+          <label class="check-field">
+            <input type="checkbox" [(ngModel)]="columnForm.isDoneColumn" name="isDoneColumn"/>
+            <span>
+              <span class="check-field-label">Done column</span>
+              <span class="field-hint">Tasks here count as completed and can be archived. Only one column per board.</span>
+            </span>
+          </label>
+        }
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" (click)="closeColumnForm()">Cancel</button>
@@ -301,9 +333,41 @@
         <app-icon name="trash" [size]="15"/> Delete
       </button>
       <span class="spacer"></span>
+      <button type="button" class="btn btn-ghost" (click)="archiveTask(selectedTask)" title="Hide from the board. Restore it any time from History.">
+        <app-icon name="archive" [size]="15"/> Archive
+      </button>
       <button type="button" class="btn btn-secondary" (click)="openEditTask(selectedTask)">
         <app-icon name="pencil" [size]="15"/> Edit
       </button>
+    </div>
+  </app-modal>
+}
+
+<!-- Close cycle -->
+@if (isCloseCycleOpen && activeCycle) {
+  <app-modal [title]="'Close cycle ' + activeCycle.number + '?'" (closed)="isCloseCycleOpen = false">
+    <div class="modal-body">
+      <ul class="close-cycle-summary">
+        <li>
+          <app-icon name="archive" [size]="16"/>
+          <span><strong>{{ pluralize(getCycleDoneCount(), 'done task') }}</strong> will be archived into cycle {{ activeCycle.number }}.</span>
+        </li>
+        <li>
+          <app-icon name="chevron-right" [size]="16"/>
+          <span><strong>{{ pluralize(getTotalTasks() - getCycleDoneCount(), 'unfinished task') }}</strong> will stay on the board for cycle {{ activeCycle.number + 1 }}.</span>
+        </li>
+        <li>
+          <app-icon name="flag" [size]="16"/>
+          <span>Cycle {{ activeCycle.number + 1 }} starts now and runs for {{ pluralize(board?.cycleLengthDays ?? 14, 'day') }}.</span>
+        </li>
+      </ul>
+      @if (!getDoneColumn()) {
+        <p class="field-hint">This board has no done column, so nothing will be archived. Mark one when you rename a column.</p>
+      }
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" (click)="isCloseCycleOpen = false">Cancel</button>
+      <button type="button" class="btn btn-primary" [disabled]="isSaving" (click)="closeCycle()">Close cycle</button>
     </div>
   </app-modal>
 }

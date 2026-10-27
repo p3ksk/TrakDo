@@ -44,7 +44,7 @@ export class BoardService {
     return this.http.post<number>(`${environment.apiUrl}/board/${boardId}/columns`, column);
   }
 
-  updateColumn(boardId: number, columnId: number, column: { name: string; sortOrder: number }) {
+  updateColumn(boardId: number, columnId: number, column: { name: string; sortOrder: number; isDoneColumn?: boolean }) {
     return this.http.put<void>(`${environment.apiUrl}/board/${boardId}/columns/${columnId}`, column);
   }
 

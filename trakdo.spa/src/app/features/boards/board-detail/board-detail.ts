@@ -1,5 +1,5 @@
 import {ChangeDetectorRef, Component, OnDestroy, OnInit} from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import {BoardService} from '../../../core/services/board.service';
 import {TaskService} from '../../../core/services/task.service';
@@ -8,6 +8,8 @@ import {NotificationService} from '../../../core/services/notification.service';
 import { SessionBusService } from '../../../core/services/session-bus.service';
 import {DateTimeFormatService} from '../../../core/services/date-time-format.service';
 import {BoardSelectionService} from '../../../core/services/board-selection.service';
+import {CycleService} from '../../../core/services/cycle.service';
+import {Cycle} from '../../../core/models/cycle.model';
 import {Observable, Subscription} from 'rxjs';
 import {getPriorityOption, PRIORITY_OPTIONS, PriorityOption, TaskPriority} from '../../../core/models/priority.model';
 import {formatClock, formatHuman, pluralize} from '../../../core/utils/duration';
@@ -20,6 +22,7 @@ import {PageHeader} from '../../../shared/page-header/page-header';
 interface ColumnFormState {
   column: Column | null; // null = create
   name: string;
+  isDoneColumn: boolean;
 }
 
 interface TaskFormState {
@@ -35,7 +38,7 @@ interface TaskFormState {
 @Component({
   selector: 'app-board-detail',
   standalone: true,
-  imports: [FormsModule, Icon, Modal, PageHeader],
+  imports: [FormsModule, RouterLink, Icon, Modal, PageHeader],
   templateUrl: './board-detail.html',
   styleUrl: './board-detail.css'
 })
@@ -50,6 +53,8 @@ export class BoardDetail implements OnInit, OnDestroy {
   columnForm: ColumnFormState | null = null;
   taskForm: TaskFormState | null = null;
   selectedTask: Task | null = null;
+  activeCycle: Cycle | null = null;
+  isCloseCycleOpen = false;
 
   draggedTask: Task | null = null;
   draggedFromColumn: Column | null = null;
@@ -67,7 +72,7 @@ export class BoardDetail implements OnInit, OnDestroy {
   constructor(private boardService: BoardService, private taskService: TaskService,
     private sessionService: SessionsService, private sessionBus: SessionBusService, private notification: NotificationService,
     private route: ActivatedRoute, private router: Router, private cdr: ChangeDetectorRef, private dateTimeFormat: DateTimeFormatService,
-    private boardSelectionService: BoardSelectionService) {}
+    private boardSelectionService: BoardSelectionService, private cycleService: CycleService) {}
 
   ngOnInit(): void {
     this.routeSubscription = this.route.paramMap.subscribe(paramMap => {
@@ -86,6 +91,7 @@ export class BoardDetail implements OnInit, OnDestroy {
       this.isLoading = true;
       this.board = null;
       this.columns = [];
+      this.activeCycle = null;
       this.boardSelectionService.setSelectedBoard(boardId);
       this.loadBoard(boardId);
       this.loadColumns(boardId);
@@ -101,6 +107,7 @@ export class BoardDetail implements OnInit, OnDestroy {
     this.boardService.getBoard(boardId).subscribe({
       next: board => {
         this.board = board;
+        this.loadActiveCycle();
         this.cdr.markForCheck();
       },
       error: _ => {
@@ -116,6 +123,8 @@ export class BoardDetail implements OnInit, OnDestroy {
         this.clearTimerTracking();
         this.columns = columns;
         this.startUnfinishedSessions();
+        // Loading columns may have rolled the cycle over on the server.
+        this.loadActiveCycle();
         this.selectedTask = keepTaskOpenId !== undefined
           ? this.columns.flatMap(column => column.tasks).find(task => task.id === keepTaskOpenId) ?? null
           : null;
@@ -131,6 +140,26 @@ export class BoardDetail implements OnInit, OnDestroy {
     });
   }
 
+  private loadActiveCycle(): void {
+    const board = this.board;
+    if (!board?.cyclesEnabled) {
+      this.activeCycle = null;
+      return;
+    }
+
+    this.cycleService.getCycles(board.id).subscribe({
+      next: cycles => {
+        if (this.board?.id !== board.id) return;
+        this.activeCycle = cycles.find(cycle => cycle.isActive) ?? null;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.activeCycle = null;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
   private clearTimerTracking(): void {
     this.timerIntervals.forEach(interval => clearInterval(interval));
     this.timerIntervals.clear();
@@ -139,11 +168,11 @@ export class BoardDetail implements OnInit, OnDestroy {
 
   // Column Management
   openCreateColumn(): void {
-    this.columnForm = { column: null, name: '' };
+    this.columnForm = { column: null, name: '', isDoneColumn: false };
   }
 
   openRenameColumn(column: Column): void {
-    this.columnForm = { column, name: column.name };
+    this.columnForm = { column, name: column.name, isDoneColumn: !!column.isDoneColumn };
   }
 
   closeColumnForm(): void {
@@ -156,14 +185,15 @@ export class BoardDetail implements OnInit, OnDestroy {
     if (!form || !name || !this.board || this.isSaving) return;
 
     this.isSaving = true;
+    const doneColumnChanged = !!form.column && form.isDoneColumn !== !!form.column.isDoneColumn;
     const request: Observable<unknown> = form.column
-      ? this.boardService.updateColumn(this.board.id, form.column.id, { name, sortOrder: form.column.sortOrder ?? 0 })
+      ? this.boardService.updateColumn(this.board.id, form.column.id, { name, sortOrder: form.column.sortOrder ?? 0, isDoneColumn: form.isDoneColumn })
       : this.boardService.createColumn({ name, sortOrder: this.getNextColumnSortOrder() }, this.board.id);
 
     request.subscribe({
       next: () => {
         this.isSaving = false;
-        if (form.column) {
+        if (form.column && !doneColumnChanged) {
           form.column.name = name;
         } else {
           this.loadColumns(this.board!.id);
@@ -303,6 +333,78 @@ export class BoardDetail implements OnInit, OnDestroy {
       },
       error: () => {
         this.notification.error('Failed to delete task.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  archiveTask(task: Task): void {
+    this.taskService.archiveTask(task.id).subscribe({
+      next: () => {
+        this.closeTaskDetail();
+        this.loadColumns(this.board!.id);
+        this.notification.success(`"${task.title}" archived.`);
+      },
+      error: () => {
+        this.notification.error('Failed to archive task.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  archiveDoneTasks(column: Column): void {
+    if (!confirm(`Archive all ${pluralize(column.tasks.length, 'task')} in "${column.name}"? You can restore them from History.`)) return;
+
+    this.taskService.archiveDoneTasks(this.board!.id).subscribe({
+      next: count => {
+        this.loadColumns(this.board!.id);
+        this.notification.success(`${pluralize(count, 'task')} archived.`);
+      },
+      error: () => {
+        this.notification.error('Failed to archive tasks.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  // Cycles
+  getDoneColumn(): Column | null {
+    return this.columns.find(column => column.isDoneColumn) ?? null;
+  }
+
+  getCycleDoneCount(): number {
+    return this.getDoneColumn()?.tasks.length ?? 0;
+  }
+
+  getCycleProgress(): number {
+    const total = this.getTotalTasks();
+    return total === 0 ? 0 : Math.round(this.getCycleDoneCount() / total * 100);
+  }
+
+  getCycleDaysLeft(cycle: Cycle): number {
+    const end = this.dateTimeFormat.parseApiDateTime(cycle.endDate).getTime();
+    return Math.max(0, Math.ceil((end - Date.now()) / 86_400_000));
+  }
+
+  openCloseCycle(): void {
+    this.isCloseCycleOpen = true;
+  }
+
+  closeCycle(): void {
+    const cycle = this.activeCycle;
+    if (!cycle || this.isSaving) return;
+
+    this.isSaving = true;
+    this.cycleService.closeCycle(cycle.id).subscribe({
+      next: () => {
+        this.isSaving = false;
+        this.isCloseCycleOpen = false;
+        this.notification.success(`Cycle ${cycle.number} closed.`);
+        this.loadColumns(this.board!.id);
+      },
+      error: () => {
+        this.isSaving = false;
+        this.notification.error('Failed to close cycle.');
         this.cdr.markForCheck();
       }
     });

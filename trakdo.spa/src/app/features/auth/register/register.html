@@ -3,71 +3,77 @@
     <img src="/assets/icon-small.png" alt=""/>
     <span>TrakDo</span>
   </div>
-  <h1 class="auth-title">Create your account</h1>
-  <p class="auth-subtitle">Organize tasks on boards and track the time you spend on them.</p>
 
-  <form [formGroup]="registerForm" (ngSubmit)="onSubmit()" class="auth-form" novalidate>
-    <div class="field">
-      <label for="username" class="field-label">Username</label>
-      <input id="username" type="text" formControlName="username" class="input" autocomplete="username" autofocus maxlength="32"
-             [class.is-invalid]="username?.invalid && username?.touched"/>
-      @if (username?.invalid && username?.touched) {
-        <span class="field-error">
-          @if (username?.errors?.['required']) { Choose a username. }
-          @else if (username?.errors?.['minlength']) { Use at least 3 characters. }
-          @else if (username?.errors?.['maxlength']) { Use at most 32 characters. }
-        </span>
-      } @else {
-        <span class="field-hint">3–32 characters.</span>
-      }
-    </div>
+  @if (!registrationEnabled()) {
+    <h1 class="auth-title">Registration is closed</h1>
+    <p class="auth-subtitle">New accounts can't be created right now. Ask an administrator for access.</p>
+  } @else {
+    <h1 class="auth-title">Create your account</h1>
+    <p class="auth-subtitle">Organize tasks on boards and track the time you spend on them.</p>
 
-    <div class="field">
-      <label for="password" class="field-label">Password</label>
-      <div class="password-wrap">
-        <input id="password" [type]="showPassword() ? 'text' : 'password'" formControlName="password" class="input"
-               autocomplete="new-password" [class.is-invalid]="password?.invalid && password?.touched"/>
-        <button type="button" class="btn btn-ghost btn-icon btn-sm password-toggle" (click)="showPassword.set(!showPassword())"
-                [attr.aria-label]="showPassword() ? 'Hide passwords' : 'Show passwords'" [attr.aria-pressed]="showPassword()">
-          <app-icon [name]="showPassword() ? 'eye-off' : 'eye'" [size]="17"/>
-        </button>
+    <form [formGroup]="registerForm" (ngSubmit)="onSubmit()" class="auth-form" novalidate>
+      <div class="field">
+        <label for="username" class="field-label">Username</label>
+        <input id="username" type="text" formControlName="username" class="input" autocomplete="username" autofocus maxlength="32"
+               [class.is-invalid]="username?.invalid && username?.touched"/>
+        @if (username?.invalid && username?.touched) {
+          <span class="field-error">
+            @if (username?.errors?.['required']) { Choose a username. }
+            @else if (username?.errors?.['minlength']) { Use at least 3 characters. }
+            @else if (username?.errors?.['maxlength']) { Use at most 32 characters. }
+          </span>
+        } @else {
+          <span class="field-hint">3–32 characters.</span>
+        }
       </div>
-      @if (password?.invalid && password?.touched) {
-        <span class="field-error">
-          @if (password?.errors?.['required']) { Choose a password. } @else { Use at least 6 characters. }
-        </span>
-      } @else {
-        <span class="field-hint">At least 6 characters.</span>
-      }
-    </div>
 
-    <div class="field">
-      <label for="confirmPassword" class="field-label">Confirm password</label>
-      <input id="confirmPassword" [type]="showPassword() ? 'text' : 'password'" formControlName="confirmPassword" class="input"
-             autocomplete="new-password" [class.is-invalid]="confirmPassword?.touched && (confirmPassword?.invalid || registerForm.errors?.['passwordMismatch'])"/>
-      @if (confirmPassword?.touched && (confirmPassword?.invalid || registerForm.errors?.['passwordMismatch'])) {
-        <span class="field-error">
-          @if (confirmPassword?.errors?.['required']) { Repeat your password. } @else { Passwords don't match. }
-        </span>
-      }
-    </div>
-
-    @if (errorMessage()) {
-      <div class="auth-error" role="alert">
-        <app-icon name="alert" [size]="16"/>
-        <span>{{ errorMessage() }}</span>
+      <div class="field">
+        <label for="password" class="field-label">Password</label>
+        <div class="password-wrap">
+          <input id="password" [type]="showPassword() ? 'text' : 'password'" formControlName="password" class="input"
+                 autocomplete="new-password" [class.is-invalid]="password?.invalid && password?.touched"/>
+          <button type="button" class="btn btn-ghost btn-icon btn-sm password-toggle" (click)="showPassword.set(!showPassword())"
+                  [attr.aria-label]="showPassword() ? 'Hide passwords' : 'Show passwords'" [attr.aria-pressed]="showPassword()">
+            <app-icon [name]="showPassword() ? 'eye-off' : 'eye'" [size]="17"/>
+          </button>
+        </div>
+        @if (password?.invalid && password?.touched) {
+          <span class="field-error">
+            @if (password?.errors?.['required']) { Choose a password. } @else { Use at least 6 characters. }
+          </span>
+        } @else {
+          <span class="field-hint">At least 6 characters.</span>
+        }
       </div>
-    }
 
-    <button type="submit" class="btn btn-primary btn-block auth-submit" [disabled]="isLoading()">
-      @if (isLoading()) {
-        <span class="spinner" aria-hidden="true"></span>
-        <span class="visually-hidden">Creating account…</span>
-      } @else {
-        Create account
+      <div class="field">
+        <label for="confirmPassword" class="field-label">Confirm password</label>
+        <input id="confirmPassword" [type]="showPassword() ? 'text' : 'password'" formControlName="confirmPassword" class="input"
+               autocomplete="new-password" [class.is-invalid]="confirmPassword?.touched && (confirmPassword?.invalid || registerForm.errors?.['passwordMismatch'])"/>
+        @if (confirmPassword?.touched && (confirmPassword?.invalid || registerForm.errors?.['passwordMismatch'])) {
+          <span class="field-error">
+            @if (confirmPassword?.errors?.['required']) { Repeat your password. } @else { Passwords don't match. }
+          </span>
+        }
+      </div>
+
+      @if (errorMessage()) {
+        <div class="auth-error" role="alert">
+          <app-icon name="alert" [size]="16"/>
+          <span>{{ errorMessage() }}</span>
+        </div>
       }
-    </button>
-  </form>
+
+      <button type="submit" class="btn btn-primary btn-block auth-submit" [disabled]="isLoading()">
+        @if (isLoading()) {
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="visually-hidden">Creating account…</span>
+        } @else {
+          Create account
+        }
+      </button>
+    </form>
+  }
 
   <p class="auth-footer">
     Already have an account? <a routerLink="/auth/login">Sign in</a>

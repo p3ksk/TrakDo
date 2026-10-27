@@ -78,6 +78,25 @@
       </div>
     </section>
 
+    <section class="panel settings-section">
+      <div class="section-intro">
+        <h2>Done tasks</h2>
+        <p>Keep done columns short. Archived tasks keep their tracked time and stay in each board's History.</p>
+      </div>
+
+      <div class="section-fields">
+        <div class="field">
+          <label class="field-label" for="autoArchiveDays">Archive done tasks automatically</label>
+          <select class="input" id="autoArchiveDays" name="autoArchiveDays" [ngModel]="form().autoArchiveDays" (ngModelChange)="update('autoArchiveDays', $event)">
+            @for (option of autoArchiveOptions; track option.value) {
+              <option [ngValue]="option.value">{{ option.label }}</option>
+            }
+          </select>
+          <span class="field-hint">Counted from when a task entered the done column. Runs when you open a board.</span>
+        </div>
+      </div>
+    </section>
+
     <div class="form-actions">
       @if (isDirty()) {
         <span class="unsaved">Unsaved changes</span>

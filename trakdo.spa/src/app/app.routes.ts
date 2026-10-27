@@ -6,6 +6,7 @@ import {Settings} from './features/settings/settings';
 import {BoardDetail} from './features/boards/board-detail/board-detail';
 import {Sessions} from './features/sessions/sessions';
 import {Statistics} from './features/statistics/statistics';
+import {adminGuard} from './core/guards/admin-guard';
 
 export const routes: Routes = [
   {
@@ -59,12 +60,21 @@ export const routes: Routes = [
         component: Statistics
       },
       {
+        path: 'board/:boardId/history',
+        loadComponent: () => import('./features/history/history').then(m => m.History)
+      },
+      {
         path: 'boards',
         loadChildren: () => import('./features/boards/board.routes').then(m => m.routes)
       },
       {
         path: 'settings',
         component: Settings
+      },
+      {
+        path: 'admin',
+        canActivate: [adminGuard],
+        loadComponent: () => import('./features/admin/admin').then(m => m.Admin)
       }
     ]
   }

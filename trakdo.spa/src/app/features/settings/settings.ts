@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { formatInTimeZone } from 'date-fns-tz';
-import { DATE_FORMAT_OPTIONS, UserSettings } from '../../core/models/settings.model';
+import { AUTO_ARCHIVE_OPTIONS, DATE_FORMAT_OPTIONS, UserSettings } from '../../core/models/settings.model';
 import { SettingsService } from '../../core/services/settings.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { PageHeader } from '../../shared/page-header/page-header';
@@ -20,6 +20,7 @@ export class Settings implements OnInit {
 
   readonly timezoneOptions = this.settingsService.getTimezoneOptions();
   readonly dateFormatOptions = DATE_FORMAT_OPTIONS;
+  readonly autoArchiveOptions = AUTO_ARCHIVE_OPTIONS;
   readonly hourStartOptions: number[] = Array.from({ length: 24 }, (_, i) => i);
   readonly hourEndOptions: number[] = Array.from({ length: 24 }, (_, i) => i + 1);
   readonly browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;

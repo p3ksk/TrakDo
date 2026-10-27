@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using TrakDo.API.Data;
@@ -11,6 +13,7 @@ public static class StartupServicesBuildHelper
     public static void SetupServices(this WebApplicationBuilder builder)
     {
         builder.Services.AddSingleton<TokenHelper>();
+        builder.Services.AddSingleton<IAuthorizationHandler, AdminAuthorizationHandler>();
     }
 
     /// <summary>
@@ -57,7 +60,31 @@ public static class StartupServicesBuildHelper
                 ValidateAudience = false,
                 ValidateLifetime = true
             };
+
+            // Tokens outlive accounts: reject a still-valid token whose user has been deleted by an admin.
+            options.Events = new JwtBearerEvents
+            {
+                OnTokenValidated = async context =>
+                {
+                    if (!long.TryParse(context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+                    {
+                        context.Fail("User ID claim is missing.");
+                        return;
+                    }
+
+                    var contextFactory = context.HttpContext.RequestServices.GetRequiredService<IDbContextFactory<TrakDoDbContext>>();
+                    await using var dbContext = await contextFactory.CreateDbContextAsync();
+                    if (!await dbContext.Users.AnyAsync(_ => _.Id == userId))
+                    {
+                        context.Fail("User no longer exists.");
+                    }
+                }
+            };
         });
-        
+
+        builder.Services.AddAuthorization(options =>
+            options.AddPolicy(AdminRequirement.PolicyName, policy => policy
+                .RequireAuthenticatedUser()
+                .AddRequirements(new AdminRequirement())));
     }
 }

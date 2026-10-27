@@ -25,7 +25,14 @@ public class User
     public int WorkDayStartHour { get; set; } = 9;
 
     public int WorkDayEndHour { get; set; } = 17;
-    
+
+    public bool IsAdmin { get; set; }
+
+    public DateTime? LastLogin { get; set; }
+
+    /// <summary>Done tasks are archived this many days after completion. 0 disables auto-archive.</summary>
+    public int AutoArchiveDays { get; set; }
+
     
     public ICollection<Board> Boards { get; set; }
 }

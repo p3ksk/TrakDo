@@ -12,5 +12,7 @@ public class BoardDto
     public int SortOrder { get; set; }
     public DateTime Created { get; set; }
     public DateTime? Updated { get; set; }
+    public bool CyclesEnabled { get; set; }
+    public int CycleLengthDays { get; set; }
     public ColumnDto[] Columns { get; set; }
 }

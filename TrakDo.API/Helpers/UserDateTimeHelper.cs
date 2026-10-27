@@ -69,6 +69,8 @@ public static class UserDateTimeHelper
         task.DueDate = ConvertUtcToUserLocal(task.DueDate, timezone);
         task.Created = ConvertUtcToUserLocal(task.Created, timezone);
         task.Updated = ConvertUtcToUserLocal(task.Updated, timezone);
+        task.CompletedAt = ConvertUtcToUserLocal(task.CompletedAt, timezone);
+        task.ArchivedAt = ConvertUtcToUserLocal(task.ArchivedAt, timezone);
         if (task.Sessions == null)
         {
             return;
@@ -115,6 +117,8 @@ public static class UserDateTimeHelper
         task.DueDate = ConvertUtcToUserLocal(task.DueDate, timezone);
         task.Created = ConvertUtcToUserLocal(task.Created, timezone);
         task.Updated = ConvertUtcToUserLocal(task.Updated, timezone);
+        task.CompletedAt = ConvertUtcToUserLocal(task.CompletedAt, timezone);
+        task.ArchivedAt = ConvertUtcToUserLocal(task.ArchivedAt, timezone);
         if (task.Sessions == null)
         {
             return;

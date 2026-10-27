@@ -32,6 +32,8 @@ public static class MappingExtensions
             SortOrder = source.SortOrder,
             Created = source.Created,
             Updated = source.Updated,
+            CyclesEnabled = source.CyclesEnabled,
+            CycleLengthDays = source.CycleLengthDays,
             Columns = source.Columns?.Select(column => column.ToColumnDto()).ToArray() ?? []
         };
     }
@@ -53,6 +55,7 @@ public static class MappingExtensions
             BoardId = source.BoardId,
             Name = source.Name,
             SortOrder = source.SortOrder,
+            IsDoneColumn = source.IsDoneColumn,
             Created = source.Created,
             Updated = source.Updated,
             Tasks = source.Tasks?.Select(task => task.ToTaskDto()).ToArray() ?? []
@@ -91,6 +94,9 @@ public static class MappingExtensions
             DueDate = source.DueDate,
             Created = source.Created,
             Updated = source.Updated,
+            CompletedAt = source.CompletedAt,
+            ArchivedAt = source.ArchivedAt,
+            CycleId = source.CycleId,
             Sessions = source.Sessions?.Select(session => session.ToSessionDto()).ToArray() ?? []
         };
     }

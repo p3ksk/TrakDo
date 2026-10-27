@@ -34,11 +34,18 @@ export class Register {
   isLoading = signal(false);
   errorMessage = signal('');
   showPassword = signal(false);
+  registrationEnabled = signal(true);
 
   constructor() {
     if (this.authService.isAuthenticated()) {
       this.router.navigateByUrl('/');
+      return;
     }
+
+    this.authService.getRegistrationStatus().subscribe({
+      next: status => this.registrationEnabled.set(status.enabled),
+      error: err => console.error('Failed to load registration status', err)
+    });
   }
 
   get username() { return this.registerForm.get('username'); }
@@ -64,6 +71,11 @@ export class Register {
         this.router.navigate(['/']);
       },
       error: (error) => {
+        if (error.status === 403) {
+          this.registrationEnabled.set(false);
+          this.isLoading.set(false);
+          return;
+        }
         this.errorMessage.set(error.status === 429
           ? 'Too many attempts. Wait a minute and try again.'
           : (typeof error.error === 'string' && error.error) || error.error?.message || 'Registration failed. The username may already be taken.');

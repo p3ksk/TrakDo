@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import {LoginRequest, RegisterRequest, User} from '../models/user.model';
+import {CurrentUser, LoginRequest, RegisterRequest, RegistrationStatus, User} from '../models/user.model';
 import {HttpClient} from '@angular/common/http';
 import {Router} from '@angular/router';
 import {Observable, tap} from 'rxjs';
@@ -13,6 +13,7 @@ export class AuthService {
   private readonly USER = 'trakdo_user'
   currentUser = signal<User | null>(null);
   isAuthenticated = signal<boolean>(false)
+  isAdmin = signal<boolean>(false)
 
   constructor(private http: HttpClient, private router: Router, private settingsService: SettingsService) {
     // Migrate old localStorage key
@@ -45,10 +46,22 @@ export class AuthService {
     )
   }
 
+  /** Refreshes the admin flag from the API; the cached login may predate a role change. */
+  loadMe(): Observable<CurrentUser> {
+    return this.http.get<CurrentUser>(`${environment.apiUrl}/auth/me`).pipe(
+      tap(me => this.isAdmin.set(me.isAdmin))
+    )
+  }
+
+  getRegistrationStatus(): Observable<RegistrationStatus> {
+    return this.http.get<RegistrationStatus>(`${environment.apiUrl}/auth/registration-status`)
+  }
+
   logout() {
     localStorage.removeItem(this.USER);
     this.currentUser.set(null);
     this.isAuthenticated.set(false);
+    this.isAdmin.set(false);
     this.settingsService.resetSettings();
     this.router.navigate(['/auth/login']).then(r => {
       if (!r) {
@@ -64,6 +77,7 @@ export class AuthService {
     localStorage.setItem(this.USER, JSON.stringify(user));
     this.currentUser.set(user);
     this.isAuthenticated.set(true);
+    this.isAdmin.set(!!user.isAdmin);
   }
 
   private loadUserFromLocalStorage() {
@@ -73,8 +87,10 @@ export class AuthService {
     }
 
     try {
-      this.currentUser.set(JSON.parse(userJson));
+      const user: User = JSON.parse(userJson);
+      this.currentUser.set(user);
       this.isAuthenticated.set(true);
+      this.isAdmin.set(!!user.isAdmin);
     } catch {
       localStorage.removeItem(this.USER);
     }

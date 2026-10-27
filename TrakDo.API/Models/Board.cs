@@ -10,7 +10,10 @@ public class Board
     public int SortOrder { get; set; }
     public DateTime Created { get; set; }
     public DateTime? Updated { get; set; }
+    public bool CyclesEnabled { get; set; }
+    public int CycleLengthDays { get; set; } = 14;
     
     public User User { get; set; }
     public ICollection<Column> Columns { get; set; }
+    public ICollection<Cycle> Cycles { get; set; }
 }

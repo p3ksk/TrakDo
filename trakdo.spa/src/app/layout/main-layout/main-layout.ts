@@ -12,7 +12,7 @@ import {RunningSession, RunningTimerService} from '../../core/services/running-t
 import {Icon, IconName} from '../../shared/icon/icon';
 import {formatClock} from '../../core/utils/duration';
 
-type BoardSection = 'tasks' | 'calendar' | 'sessions' | 'statistics';
+type BoardSection = 'tasks' | 'calendar' | 'sessions' | 'statistics' | 'history';
 
 interface BoardNavItem {
   section: BoardSection;
@@ -21,7 +21,7 @@ interface BoardNavItem {
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebar_collapsed';
-const SCOPED_ROUTE = /^\/board\/(\d+)\/(tasks|calendar|sessions|statistics)\/?(?:[?#].*)?$/;
+const SCOPED_ROUTE = /^\/board\/(\d+)\/(tasks|calendar|sessions|statistics|history)\/?(?:[?#].*)?$/;
 
 @Component({
   selector: 'app-main-layout',
@@ -43,7 +43,8 @@ export class MainLayout implements OnInit, OnDestroy {
     { section: 'tasks', label: 'Tasks', icon: 'kanban' },
     { section: 'calendar', label: 'Calendar', icon: 'calendar' },
     { section: 'sessions', label: 'Sessions', icon: 'clock' },
-    { section: 'statistics', label: 'Statistics', icon: 'chart' }
+    { section: 'statistics', label: 'Statistics', icon: 'chart' },
+    { section: 'history', label: 'History', icon: 'archive' }
   ];
 
   isSidebarCollapsed = signal(this.readCollapsedPreference());
@@ -57,6 +58,7 @@ export class MainLayout implements OnInit, OnDestroy {
   activeSection = computed(() => this.getScopedRouteType(this.currentUrl()));
   isBoardsRoute = computed(() => /^\/boards\/?(?:[?#].*)?$/.test(this.currentUrl()));
   isSettingsRoute = computed(() => this.currentUrl().startsWith('/settings'));
+  isAdminRoute = computed(() => this.currentUrl().startsWith('/admin'));
 
   constructor() {
     effect(() => {
@@ -71,6 +73,9 @@ export class MainLayout implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.authService.loadMe().subscribe({
+      error: err => console.error('Failed to load current user in layout', err)
+    });
     this.ensureSettingsLoaded();
     this.syncSelectedBoardFromUrl(this.router.url);
     this.loadBoards();

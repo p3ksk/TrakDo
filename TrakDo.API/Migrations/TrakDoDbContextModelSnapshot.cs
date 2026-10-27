@@ -17,10 +17,25 @@ namespace TrakDo.API.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.23")
+                .HasAnnotation("ProductVersion", "9.0.20")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             MySqlModelBuilderExtensions.AutoIncrementColumns(modelBuilder);
+
+            modelBuilder.Entity("TrakDo.API.Models.AppSetting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("longtext");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("AppSettings");
+                });
 
             modelBuilder.Entity("TrakDo.API.Models.Board", b =>
                 {
@@ -35,6 +50,16 @@ namespace TrakDo.API.Migrations
 
                     b.Property<DateTime>("Created")
                         .HasColumnType("datetime(6)");
+
+                    b.Property<int>("CycleLengthDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(14);
+
+                    b.Property<bool>("CyclesEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("Description")
                         .HasColumnType("longtext");
@@ -73,6 +98,11 @@ namespace TrakDo.API.Migrations
                     b.Property<DateTime>("Created")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<bool>("IsDoneColumn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("longtext");
@@ -88,6 +118,44 @@ namespace TrakDo.API.Migrations
                     b.HasIndex("BoardId");
 
                     b.ToTable("Columns");
+                });
+
+            modelBuilder.Entity("TrakDo.API.Models.Cycle", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("BoardId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("CarriedOverCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("EndDate")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Goal")
+                        .HasMaxLength(500)
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BoardId", "Number")
+                        .IsUnique();
+
+                    b.ToTable("Cycles");
                 });
 
             modelBuilder.Entity("TrakDo.API.Models.Session", b =>
@@ -129,6 +197,9 @@ namespace TrakDo.API.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<DateTime?>("ArchivedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<long>("BoardId")
                         .HasColumnType("bigint");
 
@@ -138,8 +209,14 @@ namespace TrakDo.API.Migrations
                     b.Property<long>("ColumnId")
                         .HasColumnType("bigint");
 
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<DateTime>("Created")
                         .HasColumnType("datetime(6)");
+
+                    b.Property<long?>("CycleId")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Description")
                         .HasColumnType("longtext");
@@ -169,6 +246,8 @@ namespace TrakDo.API.Migrations
 
                     b.HasIndex("ColumnId");
 
+                    b.HasIndex("CycleId");
+
                     b.ToTable("Tasks");
                 });
 
@@ -180,6 +259,11 @@ namespace TrakDo.API.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<int>("AutoArchiveDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<DateTime>("Created")
                         .HasColumnType("datetime(6)");
 
@@ -188,6 +272,14 @@ namespace TrakDo.API.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("longtext")
                         .HasDefaultValue("YYYY-MM-DD");
+
+                    b.Property<bool>("IsAdmin")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateTime?>("LastLogin")
+                        .HasColumnType("datetime(6)");
 
                     b.Property<byte[]>("PasswordHash")
                         .IsRequired()
@@ -253,6 +345,17 @@ namespace TrakDo.API.Migrations
                     b.Navigation("Board");
                 });
 
+            modelBuilder.Entity("TrakDo.API.Models.Cycle", b =>
+                {
+                    b.HasOne("TrakDo.API.Models.Board", "Board")
+                        .WithMany("Cycles")
+                        .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Board");
+                });
+
             modelBuilder.Entity("TrakDo.API.Models.Session", b =>
                 {
                     b.HasOne("TrakDo.API.Models.Task", "Task")
@@ -278,17 +381,31 @@ namespace TrakDo.API.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("TrakDo.API.Models.Cycle", "Cycle")
+                        .WithMany("Tasks")
+                        .HasForeignKey("CycleId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Board");
 
                     b.Navigation("Column");
+
+                    b.Navigation("Cycle");
                 });
 
             modelBuilder.Entity("TrakDo.API.Models.Board", b =>
                 {
                     b.Navigation("Columns");
+
+                    b.Navigation("Cycles");
                 });
 
             modelBuilder.Entity("TrakDo.API.Models.Column", b =>
+                {
+                    b.Navigation("Tasks");
+                });
+
+            modelBuilder.Entity("TrakDo.API.Models.Cycle", b =>
                 {
                     b.Navigation("Tasks");
                 });

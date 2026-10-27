@@ -24,4 +24,21 @@ export class TaskService {
   moveTask(taskId: number, newColumnId: number) {
     return this.http.patch(`${environment.apiUrl}/task/${taskId}/move/${newColumnId}`, null);
   }
+
+  getArchivedTasks(boardId: number) {
+    return this.http.get<Task[]>(`${environment.apiUrl}/task/board/${boardId}/archived`);
+  }
+
+  archiveTask(taskId: number) {
+    return this.http.patch<void>(`${environment.apiUrl}/task/${taskId}/archive`, null);
+  }
+
+  restoreTask(taskId: number) {
+    return this.http.patch<void>(`${environment.apiUrl}/task/${taskId}/restore`, null);
+  }
+
+  /** Archives every task in the board's done column; emits how many were archived. */
+  archiveDoneTasks(boardId: number) {
+    return this.http.post<number>(`${environment.apiUrl}/task/board/${boardId}/archive-done`, null);
+  }
 }
