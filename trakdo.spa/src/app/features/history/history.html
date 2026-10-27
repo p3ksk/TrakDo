@@ -1,0 +1,180 @@
+<app-page-header eyebrow="History" [title]="board()?.name ?? ''" [subtitle]="board()?.description" [color]="board()?.color">
+  <label class="search">
+    <app-icon name="search" [size]="15"/>
+    <span class="visually-hidden">Search archived tasks</span>
+    <input type="search" class="input" placeholder="Search archive" [ngModel]="search()" (ngModelChange)="search.set($event)" name="search" autocomplete="off"/>
+  </label>
+  <button type="button" class="btn btn-secondary" (click)="openCycleSettings()" [disabled]="!board()">
+    <app-icon name="flag" [size]="15"/> {{ board()?.cyclesEnabled ? 'Cycle settings' : 'Set up cycles' }}
+  </button>
+</app-page-header>
+
+@if (isLoading() && groups().length === 0) {
+  <div class="groups">
+    @for (placeholder of [1, 2, 3]; track placeholder) {
+      <div class="skeleton" style="height: 56px"></div>
+    }
+  </div>
+} @else if (groups().length === 0) {
+  <div class="panel empty-state">
+    <span class="empty-state-icon"><app-icon name="archive" [size]="22"/></span>
+    @if (search().trim()) {
+      <h2>No archived tasks match "{{ search().trim() }}"</h2>
+      <p>Try a different word, or clear the search.</p>
+    } @else {
+      <h2>Nothing archived yet</h2>
+      <p>Archive finished tasks from the board's done column to keep it tidy. They'll be listed here with their tracked time, and you can restore them any time.</p>
+      @if (!board()?.cyclesEnabled) {
+        <button type="button" class="btn btn-secondary" (click)="openCycleSettings()">
+          <app-icon name="flag" [size]="15"/> Work in cycles instead
+        </button>
+      }
+    }
+  </div>
+} @else {
+  <div class="list-toolbar">
+    <span class="summary">
+      {{ pluralize(totals().archived, 'archived task') }}
+      @if (totals().cycles > 0) {
+        <span class="dot-sep">·</span>
+        {{ pluralize(totals().cycles, 'completed cycle') }}
+      }
+    </span>
+  </div>
+
+  <div class="groups" [class.is-loading]="isLoading()">
+    @for (group of groups(); track group.key) {
+      <section class="group" [class.is-active]="group.cycle?.isActive">
+        <button type="button" class="group-header" (click)="toggleGroup(group)" [attr.aria-expanded]="isExpanded(group)">
+          <app-icon class="caret" [class.is-open]="isExpanded(group)" name="chevron-right" [size]="16"/>
+          <span class="group-heading">
+            <span class="group-title">
+              {{ group.title }}
+              @if (group.cycle?.isActive) {
+                <span class="chip chip-current">Current · {{ getDaysLeft(group.cycle!) === 0 ? 'ends today' : pluralize(getDaysLeft(group.cycle!), 'day') + ' left' }}</span>
+              }
+            </span>
+            @if (group.subtitle) {
+              <span class="group-subtitle">{{ group.subtitle }}</span>
+            }
+          </span>
+          @if (group.cycle; as cycle) {
+            <span class="group-stats">
+              <span class="stat" title="Tasks completed in this cycle"><app-icon name="check" [size]="13"/> {{ cycle.completedCount }}</span>
+              @if (!cycle.isActive) {
+                <span class="stat" title="Unfinished tasks carried into the next cycle"><app-icon name="chevron-right" [size]="13"/> {{ cycle.carriedOverCount }}</span>
+              }
+            </span>
+          } @else {
+            <span class="group-count">{{ pluralize(group.tasks.length, 'task') }}</span>
+          }
+          <span class="group-total mono" title="Time tracked">{{ formatHuman(group.trackedSeconds) }}</span>
+        </button>
+
+        @if (isExpanded(group)) {
+          @if (group.cycle; as cycle) {
+            <div class="cycle-goal">
+              <app-icon name="flag" [size]="14"/>
+              @if (cycle.goal) {
+                <span class="goal-text">{{ cycle.goal }}</span>
+              } @else {
+                <span class="goal-text is-empty">No goal set</span>
+              }
+              <button type="button" class="link-btn" (click)="openGoal(cycle, $event)">{{ cycle.goal ? 'Edit' : 'Set a goal' }}</button>
+            </div>
+          }
+
+          @if (group.tasks.length > 0) {
+            <ul class="task-rows">
+              @for (task of group.tasks; track task.id) {
+                <li class="task-row" [style.--task-color]="task.color || '#09C1BF'">
+                  <span class="task-dot"></span>
+                  <span class="task-title" [title]="task.title">{{ task.title }}</span>
+                  <span class="task-date">{{ formatCompleted(task) }}</span>
+                  <span class="task-tracked mono">{{ formatHuman(getTrackedSeconds(task)) }}</span>
+                  <div class="task-actions">
+                    <button type="button" class="btn btn-ghost btn-icon btn-sm" (click)="restoreTask(task)" [attr.aria-label]="'Restore ' + task.title" title="Restore to board">
+                      <app-icon name="restore" [size]="15"/>
+                    </button>
+                    <button type="button" class="btn btn-ghost btn-icon btn-sm danger" (click)="deleteTask(task)" [attr.aria-label]="'Delete ' + task.title" title="Delete permanently">
+                      <app-icon name="trash" [size]="15"/>
+                    </button>
+                  </div>
+                </li>
+              }
+            </ul>
+          } @else if (group.cycle?.isActive) {
+            <p class="group-note">
+              @if (group.cycle!.completedCount > 0) {
+                {{ pluralize(group.cycle!.completedCount, 'done task') }} still on the board. They'll be archived here when the cycle closes.
+              } @else {
+                Tasks finished during this cycle will be archived here when it closes.
+              }
+            </p>
+          } @else {
+            <p class="group-note">No archived tasks in this cycle.</p>
+          }
+        }
+      </section>
+    }
+  </div>
+}
+
+<!-- Cycle settings -->
+@if (cycleSettings(); as form) {
+  <app-modal title="Cycles" (closed)="cycleSettings.set(null)">
+    <form (ngSubmit)="saveCycleSettings()">
+      <div class="modal-body">
+        <p class="modal-intro">
+          Work in fixed-length cycles. When a cycle ends, its done tasks are archived here with a summary,
+          and unfinished tasks carry over to the next cycle.
+        </p>
+        <label class="check-field">
+          <input type="checkbox" name="enabled" [ngModel]="form.enabled" (ngModelChange)="updateCycleSettings({ enabled: $event })"/>
+          <span class="check-field-label">Use cycles on this board</span>
+        </label>
+        <div class="field">
+          <span class="field-label" id="cycle-length-label">Cycle length</span>
+          <div class="segmented" role="radiogroup" aria-labelledby="cycle-length-label">
+            @for (option of cycleLengthOptions; track option.value) {
+              <button type="button" role="radio" [attr.aria-checked]="form.lengthDays === option.value" [disabled]="!form.enabled"
+                      [class.is-active]="form.lengthDays === option.value" (click)="updateCycleSettings({ lengthDays: option.value })">
+                {{ option.label }}
+              </button>
+            }
+          </div>
+          @if (form.enabled && activeCycle()) {
+            <span class="field-hint">Changing the length moves the end of the current cycle.</span>
+          } @else if (form.enabled) {
+            <span class="field-hint">The first cycle starts today.</span>
+          } @else if (activeCycle()) {
+            <span class="field-hint">Turning cycles off ends the current cycle without archiving anything.</span>
+          }
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" (click)="cycleSettings.set(null)">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="isSaving()">Save</button>
+      </div>
+    </form>
+  </app-modal>
+}
+
+<!-- Cycle goal -->
+@if (editingGoal(); as state) {
+  <app-modal [title]="'Cycle ' + state.cycle.number + ' goal'" (closed)="editingGoal.set(null)">
+    <form (ngSubmit)="saveGoal()">
+      <div class="modal-body">
+        <div class="field">
+          <label class="field-label" for="cycle-goal">What should this cycle achieve?</label>
+          <textarea id="cycle-goal" class="input" rows="3" maxlength="500" name="goal" placeholder="e.g. Ship the new onboarding flow"
+                    [ngModel]="state.goal" (ngModelChange)="updateGoalText($event)"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" (click)="editingGoal.set(null)">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="isSaving()">Save goal</button>
+      </div>
+    </form>
+  </app-modal>
+}

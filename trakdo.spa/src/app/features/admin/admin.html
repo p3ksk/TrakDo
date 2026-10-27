@@ -1,0 +1,247 @@
+<div class="admin">
+  <app-page-header eyebrow="Admin" title="Administration" subtitle="Usage across TrakDo and the accounts behind it.">
+    <button type="button" class="btn btn-secondary btn-sm" (click)="load()" [disabled]="isLoading()">Refresh</button>
+  </app-page-header>
+
+  @if (isLoading() && !stats()) {
+    <div class="overview-grid">
+      @for (placeholder of [1, 2, 3, 4, 5, 6]; track placeholder) {
+        <div class="skeleton" style="height: 104px"></div>
+      }
+    </div>
+    <div class="skeleton" style="height: 280px; margin-top: 0.75rem"></div>
+  } @else if (hasError()) {
+    <div class="panel empty-state">
+      <span class="empty-state-icon"><app-icon name="alert" [size]="22"/></span>
+      <h2>Couldn't load admin data</h2>
+      <p>Something went wrong while loading stats and accounts.</p>
+      <button type="button" class="btn btn-primary" (click)="load()">Retry</button>
+    </div>
+  } @else if (stats(); as stats) {
+    <div class="admin-body" [class.is-loading]="isLoading()">
+      <div class="overview-grid">
+        <div class="overview-card is-primary">
+          <div class="metric-label">Accounts</div>
+          <div class="metric-value mono">{{ stats.users }}</div>
+          <div class="metric-sub">{{ pluralize(stats.admins, 'admin') }}</div>
+        </div>
+        <div class="overview-card">
+          <div class="metric-label">Tracked time</div>
+          <div class="metric-value mono">{{ formatHuman(stats.trackedSeconds) }}</div>
+          <div class="metric-sub">across all finished sessions</div>
+        </div>
+        <div class="overview-card">
+          <div class="metric-label">Running timers</div>
+          <div class="metric-value mono">{{ stats.runningTimers }}</div>
+          <div class="metric-sub">right now</div>
+        </div>
+        <div class="overview-card">
+          <div class="metric-label">Boards</div>
+          <div class="metric-value mono">{{ stats.boards }}</div>
+          <div class="metric-sub">in total</div>
+        </div>
+        <div class="overview-card">
+          <div class="metric-label">Tasks</div>
+          <div class="metric-value mono">{{ stats.tasks }}</div>
+          <div class="metric-sub">in total</div>
+        </div>
+        <div class="overview-card">
+          <div class="metric-label">Sessions</div>
+          <div class="metric-value mono">{{ stats.sessions }}</div>
+          <div class="metric-sub">in total</div>
+        </div>
+      </div>
+
+      <div class="admin-grid">
+        <section class="panel admin-panel">
+          <header class="panel-head">
+            <h2>New accounts</h2>
+            <span class="panel-meta">{{ registrationsTotal() }} in the last 30 days</span>
+          </header>
+
+          <div class="trend">
+            @for (point of registrationTrend(); track point.date) {
+              <div class="trend-point" [title]="point.tooltip">
+                <span class="trend-value mono">{{ point.count > 0 ? point.count : '' }}</span>
+                <div class="trend-track">
+                  <div class="trend-fill" [style.height.%]="point.heightPercent"></div>
+                </div>
+                <span class="trend-label">{{ point.label }}</span>
+              </div>
+            }
+          </div>
+        </section>
+
+        <div class="admin-side">
+          <section class="panel admin-panel">
+            <header class="panel-head">
+              <h2>Active accounts</h2>
+            </header>
+
+            <table class="activity-table">
+              <thead>
+                <tr>
+                  <th scope="col"><span class="visually-hidden">Activity</span></th>
+                  <th scope="col">7 days</th>
+                  <th scope="col">30 days</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">Signed in</th>
+                  <td class="mono">{{ stats.loggedInLast7Days }}</td>
+                  <td class="mono">{{ stats.loggedInLast30Days }}</td>
+                </tr>
+                <tr>
+                  <th scope="row">Tracked time</th>
+                  <td class="mono">{{ stats.trackingLast7Days }}</td>
+                  <td class="mono">{{ stats.trackingLast30Days }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="panel admin-panel">
+            <header class="panel-head">
+              <h2>Registration</h2>
+            </header>
+            <p class="panel-text">
+              {{ registrationEnabled()
+                ? 'Anyone can create an account from the sign-in page.'
+                : 'Sign-up is closed. Existing accounts can still sign in.' }}
+            </p>
+            <div class="segmented" role="group" aria-label="Public registration">
+              <button type="button" [class.is-active]="registrationEnabled()" [attr.aria-pressed]="registrationEnabled()"
+                      [disabled]="isSavingSettings()" (click)="setRegistrationEnabled(true)">Open</button>
+              <button type="button" [class.is-active]="!registrationEnabled()" [attr.aria-pressed]="!registrationEnabled()"
+                      [disabled]="isSavingSettings()" (click)="setRegistrationEnabled(false)">Closed</button>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <section class="panel admin-panel users-panel">
+        <header class="panel-head">
+          <h2>Accounts</h2>
+          <span class="panel-meta">{{ pluralize(users().length, 'account') }}</span>
+        </header>
+
+        <div class="table-wrap">
+          <table class="users-table">
+            <thead>
+              <tr>
+                <th scope="col">Username</th>
+                <th scope="col">Role</th>
+                <th scope="col">Created</th>
+                <th scope="col">Last sign-in</th>
+                <th scope="col" class="col-actions"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (user of users(); track user.id) {
+                <tr>
+                  <td>
+                    <div class="user-cell">
+                      <span class="user-initial">{{ user.username.charAt(0).toUpperCase() }}</span>
+                      <span class="user-cell-name">{{ user.username }}</span>
+                      @if (isSelf(user)) {
+                        <span class="chip">You</span>
+                      }
+                    </div>
+                  </td>
+                  <td>
+                    @if (user.isAdmin) {
+                      <span class="chip chip-admin"><app-icon name="shield" [size]="12"/>Admin</span>
+                    } @else {
+                      <span class="role-user">User</span>
+                    }
+                  </td>
+                  <td class="nowrap">{{ formatDateTime(user.created) }}</td>
+                  <td class="nowrap">{{ formatDateTime(user.lastLogin) }}</td>
+                  <td class="col-actions">
+                    <div class="row-actions">
+                      <button type="button" class="btn btn-ghost btn-sm" (click)="toggleAdmin(user)"
+                              [disabled]="isSelf(user) || busyUserId() !== null">
+                        <app-icon name="shield" [size]="15"/>
+                        {{ user.isAdmin ? 'Remove admin' : 'Make admin' }}
+                      </button>
+                      <button type="button" class="btn btn-ghost btn-icon btn-sm" (click)="openPasswordModal(user)"
+                              aria-label="Reset password" title="Reset password">
+                        <app-icon name="key" [size]="16"/>
+                      </button>
+                      <button type="button" class="btn btn-ghost btn-icon btn-sm row-danger" (click)="openDeleteModal(user)"
+                              [disabled]="isSelf(user)" aria-label="Delete account" title="Delete account">
+                        <app-icon name="trash" [size]="16"/>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  }
+</div>
+
+@if (passwordTarget(); as target) {
+  <app-modal title="Reset password" (closed)="closePasswordModal()">
+    <form (ngSubmit)="submitPassword()">
+      <div class="modal-body">
+        <p class="modal-text">
+          Set a new password for <strong>{{ target.username }}</strong>. The old password stops working right away;
+          devices that are already signed in stay signed in.
+        </p>
+        <div class="field">
+          <label class="field-label" for="new-password">New password</label>
+          <input id="new-password" type="password" class="input" name="newPassword" autocomplete="new-password"
+                 [class.is-invalid]="passwordTooShort()" [ngModel]="newPassword()" (ngModelChange)="newPassword.set($event)"/>
+          @if (passwordTooShort()) {
+            <span class="field-error">Use at least {{ minPasswordLength }} characters.</span>
+          } @else {
+            <span class="field-hint">At least {{ minPasswordLength }} characters.</span>
+          }
+        </div>
+        <div class="field">
+          <label class="field-label" for="confirm-password">Confirm password</label>
+          <input id="confirm-password" type="password" class="input" name="confirmPassword" autocomplete="new-password"
+                 [class.is-invalid]="passwordMismatch()" [ngModel]="confirmPassword()" (ngModelChange)="confirmPassword.set($event)"/>
+          @if (passwordMismatch()) {
+            <span class="field-error">Passwords don't match.</span>
+          }
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" (click)="closePasswordModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="!canSubmitPassword() || isSubmittingPassword()">
+          {{ isSubmittingPassword() ? 'Saving…' : 'Reset password' }}
+        </button>
+      </div>
+    </form>
+  </app-modal>
+}
+
+@if (deleteTarget(); as target) {
+  <app-modal title="Delete account" (closed)="closeDeleteModal()">
+    <form (ngSubmit)="confirmDelete()">
+      <div class="modal-body">
+        <p class="modal-text">
+          This permanently deletes <strong>{{ target.username }}</strong> together with all of their boards, tasks and
+          tracked sessions. It can't be undone.
+        </p>
+        <div class="field">
+          <label class="field-label" for="delete-confirmation">Type <span class="mono">{{ target.username }}</span> to confirm</label>
+          <input id="delete-confirmation" type="text" class="input" name="deleteConfirmation" autocomplete="off"
+                 [ngModel]="deleteConfirmation()" (ngModelChange)="deleteConfirmation.set($event)"/>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" (click)="closeDeleteModal()">Cancel</button>
+        <button type="submit" class="btn btn-danger" [disabled]="deleteConfirmation() !== target.username || isDeleting()">
+          {{ isDeleting() ? 'Deleting…' : 'Delete account' }}
+        </button>
+      </div>
+    </form>
+  </app-modal>
+}
